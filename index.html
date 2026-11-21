@@ -1,0 +1,364 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
+<meta name="theme-color" content="#05060c">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<title>Air Guitar</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@600;700&display=swap" rel="stylesheet">
+<style>
+/* VOICE: a late-night jam, playful, almost no chrome
+   IDEA: a dark stage where light is stretched into strings
+   PICTURE: the live camera (or a dark stage) with glowing, ticked strings and a tracked hand skeleton
+   COLOUR and TYPE: night ground, strings coloured by pitch (cyan low to pink high), mint for active controls; Chakra Petch titles, system body
+   LAYOUT: full-screen stage, thin control strips top and bottom, start card over the live demo */
+:root{color-scheme:dark;--bg:#05060c;--ink:#eef3ff;--dim:#a3aecb;--glass:rgba(14,17,30,.74);--line:rgba(255,255,255,.16);--acc:#7df9c4;--hot:#ff6fae}
+*{box-sizing:border-box;min-width:0;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;height:100%;background:var(--bg);color:var(--ink);font:16px/1.5 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;overflow:hidden;overscroll-behavior:none;-webkit-user-select:none;user-select:none}
+#stage{position:fixed;inset:0;width:100%;height:100%;display:block;touch-action:none}
+.bar,.foot{position:fixed;left:0;right:0;display:flex;gap:8px;align-items:center;flex-wrap:wrap;pointer-events:none;padding-left:max(12px,env(safe-area-inset-left));padding-right:max(12px,env(safe-area-inset-right))}
+.bar{top:0;padding-top:calc(env(safe-area-inset-top) + 10px);padding-bottom:18px;background:linear-gradient(rgba(5,6,12,.85),transparent)}
+.foot{bottom:0;padding-top:18px;padding-bottom:calc(env(safe-area-inset-bottom) + 12px);background:linear-gradient(transparent,rgba(5,6,12,.88))}
+.bar>*,.row>*{pointer-events:auto}
+h1{font:700 22px/1 "Chakra Petch",system-ui,sans-serif;margin:0 auto 0 0}
+button,select{font:600 15px/1 system-ui,-apple-system,sans-serif;color:var(--ink);background:var(--glass);border:1px solid var(--line);border-radius:12px;min-height:44px;padding:0 14px;-webkit-backdrop-filter:blur(8px);backdrop-filter:blur(8px);cursor:pointer}
+select{font-size:16px;padding-right:10px}
+button:focus-visible,select:focus-visible{outline:2px solid var(--acc);outline-offset:2px}
+button[aria-pressed=true]{background:var(--acc);color:#04130c;border-color:transparent}
+#hint{margin:0;width:100%;font-size:14px;color:var(--dim);pointer-events:none}
+#hint.warn{color:var(--hot)}
+.row{display:flex;gap:8px;flex-wrap:wrap;width:100%}
+.seg{display:flex;border-radius:12px;overflow:hidden;border:1px solid var(--line)}
+.seg button{border:0;border-radius:0}
+#intro{position:fixed;inset:0;z-index:5;display:grid;place-items:center;padding:calc(env(safe-area-inset-top) + 20px) 20px calc(env(safe-area-inset-bottom) + 20px);background:rgba(5,6,12,.72);overflow-y:auto}
+#intro[hidden]{display:none}
+.card{max-width:430px;width:100%;background:rgba(10,12,24,.94);border:1px solid var(--line);border-radius:20px;padding:24px}
+.card h2{font:700 clamp(36px,10vw,50px)/1.05 "Chakra Petch",system-ui,sans-serif;margin:0 0 10px}
+.card p{color:var(--dim);margin:0 0 16px}
+.card ol{padding-left:22px;margin:0 0 20px}
+.card li{margin:6px 0}
+.big{width:100%;min-height:54px;font-size:17px;margin-bottom:10px}
+.primary{background:var(--acc);color:#04130c;border:0}
+#err{color:var(--hot);font-size:14px;margin:4px 0 8px}
+#err:empty{display:none}
+.small{font-size:13px;margin:0!important}
+@media(prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+</head>
+<body>
+<canvas id="stage" aria-label="Instrument stage: draw and play strings here"></canvas>
+
+<header class="bar">
+  <h1>Air Guitar</h1>
+  <button id="undo">Undo</button>
+  <button id="clear">Clear</button>
+</header>
+
+<footer class="foot">
+  <p id="hint">Draw: drag to stretch a string. Strum: swipe across strings. Tap a string to pluck it.</p>
+  <div class="row">
+    <div class="seg" role="group" aria-label="Touch mode">
+      <button id="mDraw" aria-pressed="true">Draw</button>
+      <button id="mStrum" aria-pressed="false">Strum</button>
+    </div>
+    <select id="scale" aria-label="Scale">
+      <option value="pent">E pentatonic</option>
+      <option value="major">E major</option>
+      <option value="chrom">Chromatic</option>
+      <option value="free">Free pitch</option>
+    </select>
+    <select id="tone" aria-label="Tone">
+      <option value="acoustic">Acoustic</option>
+      <option value="electric">Electric</option>
+    </select>
+    <button id="cam" aria-pressed="false">Camera</button>
+  </div>
+</footer>
+
+<section id="intro">
+  <div class="card">
+    <h2>Air Guitar</h2>
+    <p>Draw strings of light with your fingers, then play them. Longer strings play lower notes.</p>
+    <ol>
+      <li><b>Pinch and drag</b> to stretch a string, or pinch with both hands and pull apart.</li>
+      <li><b>Flick your index finger</b> through a string to play it. Sweep across several to strum.</li>
+      <li>Prop the phone up to play with both hands.</li>
+    </ol>
+    <button class="big primary" id="goCam">Start with camera</button>
+    <button class="big" id="goTouch">Play with touch</button>
+    <p id="err" role="alert"></p>
+    <p class="small">Hand tracking runs on your phone. Video is not uploaded. Turn the silent switch off if you hear nothing.</p>
+  </div>
+</section>
+
+<script>
+{
+const $=id=>document.getElementById(id);
+const cv=$('stage'),ctx=cv.getContext('2d');
+let W=1,H=1;
+function resize(){const r=Math.min(window.devicePixelRatio||1,2);W=innerWidth;H=innerHeight;cv.width=Math.round(W*r);cv.height=Math.round(H*r);ctx.setTransform(r,0,0,r,0,0)}
+addEventListener('resize',resize);resize();
+const diag=()=>Math.hypot(W,H);
+const minLen=()=>Math.max(40,diag()*.07);
+
+/* ---------- pitch ---------- */
+const NOTES=['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'];
+const SCALES={pent:[4,7,9,11,2],major:[4,6,8,9,11,1,3],chrom:null,free:null};
+let scaleKey='pent',tone='acoustic',touchMode='draw';
+function pitchFor(len){
+  const f=Math.min(659.26,Math.max(82.41,82.41*.85*diag()/len));
+  const m=69+12*Math.log2(f/440);
+  if(scaleKey==='free')return{f,m};
+  const set=SCALES[scaleKey];let best=Math.round(m);
+  if(set){let bd=99;for(let k=Math.floor(m)-4;k<=Math.ceil(m)+4;k++){const pc=((k%12)+12)%12;if(set.includes(pc)&&Math.abs(k-m)<bd){bd=Math.abs(k-m);best=k}}}
+  best=Math.min(76,Math.max(40,best));
+  return{f:440*2**((best-69)/12),m:best};
+}
+const nameOf=m=>{const r=Math.round(m);return NOTES[((r%12)+12)%12]+(Math.floor(r/12)-1)};
+const hueOf=m=>190+(m-40)*4;
+
+/* ---------- audio: Karplus-Strong plucked strings ---------- */
+let ac=null,buses={};const cache=new Map();
+function initAudio(){
+  if(ac){if(ac.state!=='running')ac.resume().catch(()=>{});return}
+  try{if(navigator.audioSession)navigator.audioSession.type='playback'}catch(e){}
+  const AC=window.AudioContext||window.webkitAudioContext;if(!AC)return;
+  ac=new AC();
+  const comp=ac.createDynamicsCompressor();comp.threshold.value=-14;comp.ratio.value=4;comp.connect(ac.destination);
+  const master=ac.createGain();master.gain.value=.9;master.connect(comp);
+  const verb=ac.createConvolver();verb.buffer=impulse(1.8);const wet=ac.createGain();wet.gain.value=.22;verb.connect(wet);wet.connect(master);
+  const clean=ac.createGain();clean.connect(master);clean.connect(verb);
+  const dIn=ac.createGain();dIn.gain.value=2.4;
+  const shaper=ac.createWaveShaper();shaper.curve=distCurve(30);shaper.oversample='4x';
+  const cab=ac.createBiquadFilter();cab.type='lowpass';cab.frequency.value=3200;cab.Q.value=.8;
+  const dOut=ac.createGain();dOut.gain.value=.32;
+  dIn.connect(shaper);shaper.connect(cab);cab.connect(dOut);dOut.connect(master);dOut.connect(verb);
+  buses={acoustic:clean,electric:dIn};
+  if(ac.state!=='running')ac.resume().catch(()=>{});
+}
+function impulse(sec){const n=Math.floor(ac.sampleRate*sec),b=ac.createBuffer(2,n,ac.sampleRate);for(let c=0;c<2;c++){const d=b.getChannelData(c);for(let i=0;i<n;i++)d[i]=(Math.random()*2-1)*Math.pow(1-i/n,3)}return b}
+function distCurve(k){const n=1024,c=new Float32Array(n);for(let i=0;i<n;i++){const x=i*2/n-1;c[i]=(1+k)*x/(1+k*Math.abs(x))}return c}
+function ksBuffer(f){
+  const key=Math.round(f*10);if(cache.has(key))return cache.get(key);
+  const sr=ac.sampleRate,len=Math.floor(sr*2.6),buf=ac.createBuffer(1,len,sr),d=buf.getChannelData(0);
+  const N=Math.max(2,Math.round(sr/f-.5)),decay=1-.0012*Math.sqrt(f/100);
+  let prev=0;for(let i=0;i<N;i++){prev=prev*.4+(Math.random()*2-1)*.6;d[i]=prev}
+  for(let i=N;i<len;i++){const b=i-N-1>=0?d[i-N-1]:0;d[i]=decay*.5*(d[i-N]+b)}
+  let mean=0;for(let i=0;i<N;i++)mean+=d[i];mean/=N;
+  let peak=0;for(let i=0;i<len;i++){d[i]-=mean*Math.exp(-i/sr*8);peak=Math.max(peak,Math.abs(d[i]))}
+  const fade=2000;for(let i=0;i<len;i++){d[i]*=.9/(peak||1);if(i>len-fade)d[i]*=(len-i)/fade}
+  cache.set(key,buf);return buf;
+}
+function sound(s,vel){
+  if(!ac||!buses[tone])return;
+  const src=ac.createBufferSource();src.buffer=ksBuffer(s.f);
+  const lp=ac.createBiquadFilter();lp.type='lowpass';lp.frequency.value=1500+6500*vel;
+  const g=ac.createGain();g.gain.value=.25+.75*vel;
+  src.connect(lp);lp.connect(g);
+  if(ac.createStereoPanner){const p=ac.createStereoPanner();p.pan.value=Math.max(-1,Math.min(1,(s.ax+s.bx)-1))*.7;g.connect(p);p.connect(buses[tone])}else g.connect(buses[tone]);
+  src.start();
+}
+
+/* ---------- strings ---------- */
+const strings=[],sparks=[],MAX=12;
+function addString(x1,y1,x2,y2,quiet){
+  const len=Math.hypot(x2-x1,y2-y1);if(len<minLen())return false;
+  const p=pitchFor(len),now=performance.now();
+  const s={ax:x1/W,ay:y1/H,bx:x2/W,by:y2/H,lf:len/diag(),f:p.f,m:p.m,hue:hueOf(p.m),born:now,t0:now,amp:.5,cool:{}};
+  strings.push(s);if(strings.length>MAX)strings.shift();
+  if(!quiet)sound(s,.35);
+  return true;
+}
+function retune(){for(const s of strings){const p=pitchFor(s.lf*diag());s.f=p.f;s.m=p.m;s.hue=hueOf(p.m)}}
+function pluck(s,vel,x,y){
+  const now=performance.now();s.amp=Math.min(1,.35+vel);s.t0=now;
+  sound(s,vel);
+  for(let i=0;i<12;i++){const a=Math.random()*6.283,v=1+Math.random()*4*(.5+vel);sparks.push({x,y,vx:Math.cos(a)*v,vy:Math.sin(a)*v,life:1,h:s.hue})}
+  if(sparks.length>300)sparks.splice(0,sparks.length-300);
+}
+function ends(s){return[s.ax*W,s.ay*H,s.bx*W,s.by*H]}
+function cross(s,x1,y1,x2,y2){
+  const[ax,ay,bx,by]=ends(s),dx=bx-ax,dy=by-ay,L=Math.hypot(dx,dy)||1;
+  const d1=(dx*(y1-ay)-dy*(x1-ax))/L,d2=(dx*(y2-ay)-dy*(x2-ax))/L;
+  if(d1*d2>0||d1===d2)return null;
+  const k=d1/(d1-d2),ix=x1+(x2-x1)*k,iy=y1+(y2-y1)*k,t=((ix-ax)*dx+(iy-ay)*dy)/(L*L);
+  return t>=0&&t<=1?{ix,iy}:null;
+}
+function sweep(x1,y1,x2,y2,dt,who){
+  const dist=Math.hypot(x2-x1,y2-y1);if(dist<2)return;
+  const now=performance.now(),vel=Math.max(.15,Math.min(1,dist/Math.max(dt,8)/1.6));
+  for(const s of strings){
+    if(now-s.born<350||now-(s.cool[who]||0)<110)continue;
+    const c=cross(s,x1,y1,x2,y2);if(c){s.cool[who]=now;pluck(s,vel,c.ix,c.iy)}
+  }
+}
+function nearest(x,y){
+  let best=null,bd=24;
+  for(const s of strings){const[ax,ay,bx,by]=ends(s),dx=bx-ax,dy=by-ay,t=Math.max(0,Math.min(1,((x-ax)*dx+(y-ay)*dy)/(dx*dx+dy*dy||1))),d=Math.hypot(ax+dx*t-x,ay+dy*t-y);if(d<bd){bd=d;best=s}}
+  return best;
+}
+function seed(){
+  const n=5;for(let i=0;i<n;i++){const L=W*(.88-i*.11),y=H*(.36+i*.07),tilt=L*.12;addString(W/2-L/2,y+tilt/2,W/2+L/2,y-tilt/2,true)}
+}
+
+/* ---------- touch ---------- */
+const drags=new Map();
+cv.addEventListener('pointerdown',e=>{initAudio();try{cv.setPointerCapture(e.pointerId)}catch(_){}const t=performance.now();drags.set(e.pointerId,{x0:e.clientX,y0:e.clientY,x:e.clientX,y:e.clientY,t})});
+cv.addEventListener('pointermove',e=>{
+  const d=drags.get(e.pointerId);if(!d)return;const t=performance.now();
+  if(touchMode==='strum')sweep(d.x,d.y,e.clientX,e.clientY,t-d.t,'p'+e.pointerId);
+  d.x=e.clientX;d.y=e.clientY;d.t=t;
+});
+function endDrag(e){
+  const d=drags.get(e.pointerId);if(!d)return;drags.delete(e.pointerId);
+  const moved=Math.hypot(d.x-d.x0,d.y-d.y0);
+  if(moved<10){const s=nearest(d.x,d.y);if(s)pluck(s,.6,d.x,d.y);return}
+  if(touchMode==='draw'&&!addString(d.x0,d.y0,d.x,d.y))setHint('Too short. Drag a longer line to make a string.',true);
+}
+cv.addEventListener('pointerup',endDrag);cv.addEventListener('pointercancel',endDrag);
+
+/* ---------- camera + hand tracking ---------- */
+let landmarker=null,video=null,camOn=false,lastVT=-1,lastHand=0,draft=null,waitClear=false,frameHands=[];
+const handState={};
+const CONN=[[0,1],[1,2],[2,3],[3,4],[0,5],[5,6],[6,7],[7,8],[5,9],[9,10],[10,11],[11,12],[9,13],[13,14],[14,15],[15,16],[13,17],[0,17],[17,18],[18,19],[19,20]];
+async function startCamera(){
+  initAudio();
+  if(!navigator.mediaDevices||!navigator.mediaDevices.getUserMedia)throw new Error('nocam');
+  setHint('Starting camera…');
+  const stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:'user',width:{ideal:640},height:{ideal:480}},audio:false});
+  try{
+    video=document.createElement('video');video.setAttribute('playsinline','');video.playsInline=true;video.muted=true;video.srcObject=stream;await video.play();
+    if(!landmarker){
+      setHint('Loading hand tracking (about 15 MB, first time only)…');
+      const V='https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14';
+      const{FilesetResolver,HandLandmarker}=await import(V+'/vision_bundle.mjs');
+      const fs=await FilesetResolver.forVisionTasks(V+'/wasm');
+      const opts=dg=>({baseOptions:{modelAssetPath:'https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task',delegate:dg},runningMode:'VIDEO',numHands:2,minHandDetectionConfidence:.6,minHandPresenceConfidence:.5,minTrackingConfidence:.5});
+      try{landmarker=await HandLandmarker.createFromOptions(fs,opts('GPU'))}catch(_){landmarker=await HandLandmarker.createFromOptions(fs,opts('CPU'))}
+    }
+  }catch(e){stream.getTracks().forEach(t=>t.stop());throw e}
+  camOn=true;lastHand=performance.now();setCamBtn();
+  if(navigator.wakeLock)navigator.wakeLock.request('screen').catch(()=>{});
+  setHint('Pinch and drag to draw a string. Flick your index finger through it to play.');
+}
+function stopCamera(){if(video&&video.srcObject)video.srcObject.getTracks().forEach(t=>t.stop());camOn=false;draft=null;frameHands=[];setCamBtn();setHint('Camera off. Touch play still works.')}
+function camErr(e){
+  const blocked=e&&(e.name==='NotAllowedError'||e.name==='SecurityError'||e.message==='nocam');
+  if(e&&(e.name==='NotFoundError'||e.name==='OverconstrainedError'))return 'No front camera was found on this device. Touch play still works.';
+  if(blocked)return window.top!==window.self?'The camera is blocked inside the Claude app. Open the hosted link in Safari or Chrome for hand tracking. Touch play works here.':'Camera access was refused. Allow the camera for this site in your browser settings, then try again.';
+  return 'Hand tracking could not start ('+((e&&(e.message||e.name))||'unknown error')+'). Check your connection and try again.';
+}
+function cover(){const vw=video.videoWidth||640,vh=video.videoHeight||480,sc=Math.max(W/vw,H/vh);return{vw,vh,sc,dx:(W-vw*sc)/2,dy:(H-vh*sc)/2}}
+function track(now){
+  if(!camOn||!landmarker||video.readyState<2||video.currentTime===lastVT)return;
+  lastVT=video.currentTime;
+  let res;try{res=landmarker.detectForVideo(video,now)}catch(_){return}
+  const c=cover(),seen=new Set();frameHands=[];
+  (res.landmarks||[]).forEach((lm,i)=>{
+    let key=(res.handedness&&res.handedness[i]&&res.handedness[i][0]&&res.handedness[i][0].categoryName)||'H';
+    if(seen.has(key))key+=i;seen.add(key);
+    const P=lm.map(p=>[W-(c.dx+p.x*c.vw*c.sc),c.dy+p.y*c.vh*c.sc]);
+    const st=handState[key]||(handState[key]={pinch:false,releasedAt:0,seen:0});
+    const size=Math.hypot(P[0][0]-P[9][0],P[0][1]-P[9][1])||1,r=Math.hypot(P[4][0]-P[8][0],P[4][1]-P[8][1])/size;
+    const was=st.pinch;st.pinch=was?r<.55:r<.32;if(was&&!st.pinch)st.releasedAt=now;
+    const mid=[(P[4][0]+P[8][0])/2,(P[4][1]+P[8][1])/2];
+    st.pp=st.pp&&now-st.seen<150?[st.pp[0]*.45+mid[0]*.55,st.pp[1]*.45+mid[1]*.55]:mid;
+    const tip=P[8];
+    if(st.tip&&!st.pinch&&!was&&now-st.releasedAt>280&&now-st.seen<150)sweep(st.tip[0],st.tip[1],tip[0],tip[1],now-st.t,key);
+    st.tip=tip;st.t=now;st.seen=now;
+    frameHands.push({P,st});
+  });
+  if(frameHands.length)lastHand=now;
+  const pins=frameHands.filter(h=>h.st.pinch).map(h=>h.st.pp).sort((a,b)=>a[0]-b[0]);
+  if(waitClear){if(!pins.length)waitClear=false;return}
+  if(!draft){
+    if(pins.length>=2)draft={mode:2,a:pins[0],b:pins[1],gone:0};
+    else if(pins.length===1)draft={mode:1,a:pins[0].slice(),b:pins[0],gone:0};
+    return;
+  }
+  if(draft.mode===1&&pins.length>=2)draft.mode=2;
+  if(pins.length>=draft.mode){draft.gone=0;if(draft.mode===2){draft.a=pins[0];draft.b=pins[1]}else draft.b=pins[0]}
+  else if(++draft.gone>=4){
+    const ok=addString(draft.a[0],draft.a[1],draft.b[0],draft.b[1]);
+    if(!ok)setHint('Too short. Pull your pinch further to make a string.',true);
+    else setHint('Flick your index finger through a string to play it.');
+    draft=null;waitClear=pins.length>0;
+  }
+}
+
+/* ---------- drawing ---------- */
+function strokeString(ax,ay,bx,by,hue,wob,alpha){
+  const dx=bx-ax,dy=by-ay,L=Math.hypot(dx,dy)||1,nx=-dy/L,ny=dx/L,cx=(ax+bx)/2+nx*wob*2,cy=(ay+by)/2+ny*wob*2;
+  const path=()=>{ctx.beginPath();ctx.moveTo(ax,ay);ctx.quadraticCurveTo(cx,cy,bx,by)};
+  ctx.lineCap='round';
+  path();ctx.strokeStyle=`hsla(${hue},100%,65%,${.2*alpha})`;ctx.lineWidth=12;ctx.stroke();
+  path();ctx.strokeStyle=`hsla(${hue},100%,72%,${.55*alpha})`;ctx.lineWidth=4;ctx.stroke();
+  path();ctx.strokeStyle=`rgba(255,255,255,${.95*alpha})`;ctx.lineWidth=1.6;ctx.stroke();
+  const n=Math.floor(L/22);ctx.beginPath();
+  for(let i=1;i<n;i++){const t=i/n,u=1-t,px=u*u*ax+2*u*t*cx+t*t*bx,py=u*u*ay+2*u*t*cy+t*t*by,h=i%4===0?7:4;ctx.moveTo(px,py);ctx.lineTo(px+nx*h,py+ny*h)}
+  ctx.strokeStyle=`rgba(255,255,255,${.35*alpha})`;ctx.lineWidth=1;ctx.stroke();
+  ctx.strokeStyle=`hsla(${hue},100%,82%,${alpha})`;ctx.lineWidth=1.5;
+  for(const[x,y]of[[ax,ay],[bx,by]]){ctx.beginPath();ctx.arc(x,y,4.5,0,6.283);ctx.stroke()}
+}
+function label(text,x,y,hue){ctx.font='600 13px system-ui,sans-serif';ctx.fillStyle=`hsl(${hue},100%,85%)`;const w=ctx.measureText(text).width;ctx.fillText(text,Math.min(Math.max(x+9,6),W-w-6),Math.max(y-9,16))}
+function drawHand(h){
+  const P=h.P;ctx.strokeStyle='rgba(90,240,120,.9)';ctx.lineWidth=2.5;ctx.beginPath();
+  for(const[a,b]of CONN){ctx.moveTo(P[a][0],P[a][1]);ctx.lineTo(P[b][0],P[b][1])}ctx.stroke();
+  ctx.fillStyle='#ff3b3b';for(const p of P){ctx.beginPath();ctx.arc(p[0],p[1],3.2,0,6.283);ctx.fill()}
+  ctx.beginPath();ctx.arc(P[8][0],P[8][1],9,0,6.283);ctx.strokeStyle='#fff';ctx.lineWidth=2;ctx.stroke();
+  if(h.st.pinch){ctx.beginPath();ctx.arc(h.st.pp[0],h.st.pp[1],14,0,6.283);ctx.strokeStyle='#7df9c4';ctx.lineWidth=3;ctx.stroke()}
+}
+function drawDraft(ax,ay,bx,by){
+  const len=Math.hypot(bx-ax,by-ay),ok=len>=minLen();
+  ctx.setLineDash([8,8]);ctx.beginPath();ctx.moveTo(ax,ay);ctx.lineTo(bx,by);ctx.strokeStyle=ok?'rgba(125,249,196,.95)':'rgba(255,255,255,.4)';ctx.lineWidth=2;ctx.stroke();ctx.setLineDash([]);
+  if(ok){const p=pitchFor(len);label(nameOf(p.m),bx,by,hueOf(p.m))}
+}
+let bgGrad=null,bgW=0,bgH=0;
+function frame(now){
+  track(now);
+  if(camOn&&video.readyState>=2){
+    const c=cover();ctx.save();ctx.translate(W,0);ctx.scale(-1,1);ctx.drawImage(video,c.dx,c.dy,c.vw*c.sc,c.vh*c.sc);ctx.restore();
+    ctx.fillStyle='rgba(4,6,14,.42)';ctx.fillRect(0,0,W,H);
+  }else{
+    if(!bgGrad||bgW!==W||bgH!==H){bgGrad=ctx.createRadialGradient(W/2,H*.45,0,W/2,H*.45,diag()*.6);bgGrad.addColorStop(0,'#16203f');bgGrad.addColorStop(1,'#05060c');bgW=W;bgH=H}
+    ctx.fillStyle=bgGrad;ctx.fillRect(0,0,W,H);
+  }
+  for(const s of strings){
+    const[ax,ay,bx,by]=ends(s),age=now-s.t0,L=Math.hypot(bx-ax,by-ay);
+    const a=s.amp*Math.exp(-age/(700+(659-s.f)*2)),wob=a*Math.min(18,L*.05)*Math.sin(age*(.03+s.f/9000));
+    strokeString(ax,ay,bx,by,s.hue,wob,Math.min(1,(now-s.born)/200));
+    label(nameOf(s.m),bx,by,s.hue);
+  }
+  if(draft)drawDraft(draft.a[0],draft.a[1],draft.b[0],draft.b[1]);
+  if(touchMode==='draw')for(const d of drags.values())if(Math.hypot(d.x-d.x0,d.y-d.y0)>=10)drawDraft(d.x0,d.y0,d.x,d.y);
+  for(const h of frameHands)drawHand(h);
+  for(let i=sparks.length-1;i>=0;i--){const p=sparks[i];p.x+=p.vx;p.y+=p.vy;p.vy+=.08;p.vx*=.97;p.life-=.025;if(p.life<=0){sparks.splice(i,1);continue}ctx.fillStyle=`hsla(${p.h},100%,80%,${p.life})`;ctx.fillRect(p.x-1.5,p.y-1.5,3,3)}
+  if(camOn&&now-lastHand>2500)setHint('Show your hands to the camera. Prop the phone up for two-handed play.',true);
+  requestAnimationFrame(frame);
+}
+
+/* ---------- UI ---------- */
+let hintText='';
+function setHint(t,warn){if(t===hintText)return;hintText=t;const h=$('hint');h.textContent=t;h.classList.toggle('warn',!!warn)}
+function setCamBtn(){$('cam').setAttribute('aria-pressed',camOn);$('cam').textContent=camOn?'Camera on':'Camera'}
+function setMode(m){touchMode=m;$('mDraw').setAttribute('aria-pressed',m==='draw');$('mStrum').setAttribute('aria-pressed',m==='strum');
+  setHint(m==='draw'?'Draw: drag to stretch a string. Tap a string to pluck it.':'Strum: swipe across strings to play them.')}
+$('mDraw').onclick=()=>setMode('draw');$('mStrum').onclick=()=>setMode('strum');
+$('undo').onclick=()=>{strings.pop()};
+$('clear').onclick=()=>{strings.length=0;setHint(camOn?'Pinch and drag to draw a new string.':'Drag to draw a new string.')};
+$('scale').onchange=e=>{scaleKey=e.target.value;retune()};
+$('tone').onchange=e=>{tone=e.target.value;initAudio()};
+$('cam').onclick=async()=>{if(camOn){stopCamera();return}try{await startCamera()}catch(e){setHint(camErr(e),true)}};
+$('goTouch').onclick=()=>{initAudio();$('intro').hidden=true};
+$('goCam').onclick=async()=>{const b=$('goCam');b.disabled=true;b.textContent='Starting…';$('err').textContent='';
+  try{await startCamera();$('intro').hidden=true}catch(e){$('err').textContent=camErr(e)}
+  b.disabled=false;b.textContent='Start with camera'};
+setInterval(()=>{if($('intro').hidden||!strings.length)return;const s=strings[Math.floor(Math.random()*strings.length)];const[ax,ay,bx,by]=ends(s);s.born=0;pluck(s,.5,(ax+bx)/2,(ay+by)/2)},700);
+seed();
+requestAnimationFrame(frame);
+}
+</script>
+</body>
+</html>
