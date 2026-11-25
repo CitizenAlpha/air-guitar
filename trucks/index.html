@@ -127,7 +127,13 @@ input[type=range]{width:100%;accent-color:var(--amber);height:32px}
 #mirror{position:absolute;top:16vh;width:min(18vw,180px);height:min(24vh,210px);border:8px solid #111;border-radius:14px;display:none;z-index:2;pointer-events:none;box-shadow:0 4px 12px rgba(0,0,0,.5)}
 body.inside #dash,body.inside .pillar,body.inside #roof{display:block}
 body.inside.mir #mirror{display:block}
-body.inside #outBox,body.inside #switchesOut{display:none}
+body.inside #outBox,body.inside:not(.narrow) #switchesOut{display:none}
+body.narrow #switchesOut{left:auto;right:max(10px,env(safe-area-inset-right));transform:none;bottom:calc(env(safe-area-inset-bottom) + 124px)}
+body.narrow #switches{flex-direction:column;gap:6px}
+body.narrow #switches .hbtn{min-width:76px;min-height:46px;font-size:11px}
+body.narrow #mirror{width:24vw;height:17vh;top:14vh;border-width:6px}
+body.narrow .pad{width:62px;height:62px}body.narrow .pad.big{height:84px}
+body.narrow #outBox{top:calc(env(safe-area-inset-top) + 96px)}
 #modal{position:fixed;inset:0;z-index:20;background:rgba(5,8,20,.7);display:none;place-items:center;padding:20px}
 #modal.on{display:grid}
 .mbox{background:#17214a;border:2px solid var(--line);border-radius:22px;padding:24px;max-width:440px;width:100%;text-align:center}
@@ -772,7 +778,7 @@ function realStart(cc,job){
   const pretty=save.set.quality==='pretty';renderer.shadowMap.enabled=pretty;
   cam=new THREE.PerspectiveCamera(68,innerWidth/innerHeight,.2,5000);mirCam=new THREE.PerspectiveCamera(30,.8,.5,600);
   const truck=buildTruck(spec,save,world.left),trailer=buildTrailer(save);scene.add(truck.g,trailer.g);
-  composer=null;if(pretty){composer=new EffectComposer(renderer);composer.addPass(new RenderPass(scene,cam));bloom=new UnrealBloomPass(new THREE.Vector2(innerWidth,innerHeight),world.T.bloom,.5,save.set.time==='night'?.55:.92);composer.addPass(bloom);composer.addPass(new OutputPass())}
+  composer=null;if(pretty&&!matchMedia('(pointer:coarse)').matches){composer=new EffectComposer(renderer);composer.addPass(new RenderPass(scene,cam));bloom=new UnrealBloomPass(new THREE.Vector2(innerWidth,innerHeight),world.T.bloom,.5,save.set.time==='night'?.55:.92);composer.addPass(bloom);composer.addPass(new OutputPass())}
   const R=world.R,i0=world.startI+6,lane=world.side*1.9;
   const h0=Math.atan2(R.tx[i0],R.tz[i0]);
   G={cc,C,job,spec,truck,trailer,attached:true,x:R.x[i0]-R.tz[i0]*lane,z:R.z[i0]+R.tx[i0]*lane,h:h0,th:h0,v:0,steer:0,park:true,lights:save.set.time!=='sunset'?save.set.time==='night':false,haz:false,view:save.view,idx:i0,crashes:0,
@@ -789,14 +795,19 @@ function disposeWorld(){scene.traverse(o=>{if(o.geometry)o.geometry.dispose();if
 function exitGame(){cancelAnimationFrame(raf);raf=0;if(composer){composer.dispose();composer=null}engineStop();horn(false);radio.on=false;radioLabel();G=null;if(world)disposeWorld();renderer&&renderer.renderLists.dispose();document.body.classList.remove('inside','mir');show('home')}
 function setLights(on){if(!G)return;G.lights=on;G.truck.headMat.emissive.setHex(on?0xfff1c0:0x222018);G.truck.lights.forEach(l=>l.intensity=on?420:0);G.truck.tail.emissive.setHex(on?0xa00000:0x300000);G.trailer.tail.emissive.setHex(on?0xa00000:0x300000);$('swLights').setAttribute('aria-pressed',on)}
 function setView(v){G.view=v;G.truck.glass.forEach(m=>m.visible=v!=='inside');document.body.classList.toggle('inside',v==='inside');document.body.classList.toggle('mir',v==='inside'&&save.set.quality==='pretty');
-  const sw=$('switches');(v==='inside'?$('dashSw'):$('switchesOut')).appendChild(sw);(v==='inside'?$('navSlot'):$('mapScreen')).prepend($('mini'));if(v==='inside')$('navSlot').appendChild($('radioLine'));else $('mapScreen').appendChild($('radioLine'));layoutDash();$('viewBtn').textContent=v==='inside'?'Outside view':'Cab view'}
+  (v==='inside'?$('navSlot'):$('mapScreen')).prepend($('mini'));if(v==='inside')$('navSlot').appendChild($('radioLine'));else $('mapScreen').appendChild($('radioLine'));layoutDash();$('viewBtn').textContent=v==='inside'?'Outside view':'Cab view'}
 function layoutDash(){
-  const W=innerWidth,H=innerHeight,dh=Math.min(H*.36,300),left=G&&world&&world.left;
-  const wheel=$('wheel'),ws=Math.min(H*.46,380);wheel.style.width=ws+'px';wheel.style.left=((left?.66:.34)*W-ws/2)+'px';
-  const cl=$('cluster'),cw=Math.min(W*.3,320),ch=cw*.42,dpr=Math.min(devicePixelRatio||1,2);cl.width=cw*dpr;cl.height=ch*dpr;cl.style.width=cw+'px';cl.style.height=ch+'px';cl.style.left=((left?.66:.34)*W-cw/2)+'px';cl.style.top=(dh*.08)+'px';
-  const mini=$('mini'),inside=G&&G.view==='inside',mw=inside?Math.min(W*.22,250):Math.min(W*.26,240),mh=mw*.72;mini.width=mw*dpr;mini.height=mh*dpr;mini.style.width=mw+'px';mini.style.height=mh+'px';
-  const ns=$('navSlot');ns.style.left=((left?.25:.62)*W-mw/2)+'px';ns.style.bottom=(dh*.2)+'px';ns.style.border='4px solid #050608';ns.style.borderRadius='10px';ns.style.background='#0a1430';ns.style.width=(mw+8)+'px';
-  $('mug').style.left=(left?.9:.035)*W+'px';$('mug').style.bottom='56%';const dsw=$('dashSw');dsw.style.bottom=W<1000?(dh+8)+'px':'52%';$('dashSw').style.right=left?'auto':'1%';$('dashSw').style.left=left?'1%':'auto';
+  const W=innerWidth,H=innerHeight,narrow=W<600,dh=narrow?Math.min(H*.28,230):Math.min(H*.36,300),left=G&&world&&world.left,dpr=Math.min(devicePixelRatio||1,2),inside=G&&G.view==='inside';
+  document.body.classList.toggle('narrow',narrow);$('dash').style.height=dh+'px';document.querySelectorAll('.pillar').forEach(p=>p.style.bottom=dh+'px');
+  const cx=narrow?.5:(left?.66:.34);
+  const wheel=$('wheel'),ws=narrow?Math.min(W*.72,H*.34):Math.min(H*.46,380);wheel.style.width=ws+'px';wheel.style.left=(cx*W-ws/2)+'px';
+  const cl=$('cluster'),cw=narrow?W*.6:Math.min(W*.3,320),ch=cw*.42;cl.width=cw*dpr;cl.height=ch*dpr;cl.style.width=cw+'px';cl.style.height=ch+'px';cl.style.left=(cx*W-cw/2)+'px';cl.style.top=(dh*.07)+'px';
+  const mini=$('mini'),mw=inside?(narrow?W*.38:Math.min(W*.22,250)):(narrow?W*.4:Math.min(W*.26,240)),mh=mw*.72;mini.width=mw*dpr;mini.height=mh*dpr;mini.style.width=mw+'px';mini.style.height=mh+'px';
+  const ns=$('navSlot');ns.style.border='4px solid #050608';ns.style.borderRadius='10px';ns.style.background='#0a1430';ns.style.width=(mw+8)+'px';
+  if(narrow){const top=$('hudTop').getBoundingClientRect().bottom+8;ns.style.left=(W-mw-18)+'px';ns.style.bottom=(H-top-mh-30)+'px'}else{ns.style.left=((left?.25:.62)*W-mw/2)+'px';ns.style.bottom=(dh*.2)+'px'}
+  $('mug').style.display=narrow?'none':'block';$('mug').style.left=(left?.9:.035)*W+'px';$('mug').style.bottom='56%';
+  const dsw=$('dashSw');dsw.style.bottom=W<1000?(dh+8)+'px':'52%';dsw.style.right=left?'auto':'1%';dsw.style.left=left?'1%':'auto';
+  const sw=$('switches'),target=inside&&!narrow?dsw:$('switchesOut');if(sw.parentNode!==target)target.appendChild(sw);
   const mir=$('mirror');mir.style.left=left?'auto':'1.5vw';mir.style.right=left?'1.5vw':'auto';
 }
 function toast(text,ms=2500){const t=$('toast');t.textContent=text;t.style.display='block';clearTimeout(toast.t);toast.t=setTimeout(()=>t.style.display='none',ms)}
@@ -834,6 +845,13 @@ function confetti(){const c=$('confetti'),x=c.getContext('2d'),dpr=Math.min(devi
   const step=()=>{x.clearRect(0,0,innerWidth,innerHeight);for(const b of bits){b.x+=b.vx;b.y+=b.vy;b.r+=.1;x.save();x.translate(b.x,b.y);x.rotate(b.r);x.fillStyle=b.c;x.fillRect(-4,-2,8,4);x.restore()}if(++n<220)requestAnimationFrame(step);else x.clearRect(0,0,innerWidth,innerHeight)};step()}
 
 /* --- simulation --- */
+function pen(x,z,h,mark){const R=1.3,pts=[[x+Math.sin(h)*G.truck.len,z+Math.cos(h)*G.truck.len],[x+Math.sin(h)*2,z+Math.cos(h)*2]];let p=0;
+  for(const [qx,qz] of pts){const gx=Math.floor(qx/20),gz=Math.floor(qz/20),seen=new Set();for(let a=-1;a<=1;a++)for(let b=-1;b<=1;b++){const l=world.colliders.get((gx+a)+','+(gz+b));if(!l)continue;for(const o of l){if(seen.has(o))continue;seen.add(o);
+      if(o.rect){const dx=qx-o.x,dz=qz-o.z,c=Math.cos(o.rect.h),s=Math.sin(o.rect.h),lx=dx*c-dz*s,lz=dx*s+dz*c,ox=o.rect.w/2+R-Math.abs(lx),oz=o.rect.d/2+R-Math.abs(lz);if(ox>0&&oz>0)p+=Math.min(ox,oz)}
+      else{const d=o.r+R-Math.hypot(qx-o.x,qz-o.z);if(d>0)p+=d}}}
+    for(const c of world.cars){const d=2.6-Math.hypot(c.x-qx,c.z-qz);if(d>0){p+=d;if(mark)c.stop=1.5}}}
+  return p}
+function recover(){const R=world.R,i=G.idx,lane=world.side*1.9;G.x=R.x[i]-R.tz[i]*lane;G.z=R.z[i]+R.tx[i]*lane;G.h=G.th=Math.atan2(R.tx[i],R.tz[i]);G.v=0;G.steer=0;G.stuckT=0;G.y=0;place.init=false;sfx('hiss');toast('Stuck? The recovery truck has put you back on the road.',3000)}
 function update(dt){
   const S=G.spec,R=world.R,fwd=keys.fwd||pads.fwd,rev=keys.rev||pads.rev,brake=keys.brake,steerIn=(keys.left||pads.left?1:0)-(keys.right||pads.right?1:0);
   const top=S.top/3.6,acc=2.3*S.acc*(G.attached?1:1.35);let v=G.v;
@@ -847,12 +865,12 @@ function update(dt){
   const maxSteer=.6/(1+Math.abs(v)*.055),target=steerIn*maxSteer;G.steer+=clamp(target-G.steer,-1.8*dt,1.8*dt);if(!steerIn)G.steer*=Math.pow(.2,dt);
   const px=G.x,pz=G.z,ph=G.h;
   G.h+=v/G.truck.wb*Math.tan(G.steer)*S.turn*dt;G.x+=Math.sin(G.h)*v*dt;G.z+=Math.cos(G.h)*v*dt;
-  const fx=G.x+Math.sin(G.h)*(G.truck.len),fz=G.z+Math.cos(G.h)*(G.truck.len),mx=G.x+Math.sin(G.h)*2,mz=G.z+Math.cos(G.h)*2;
-  let crashed=hits(world,fx,fz,1.3)||hits(world,mx,mz,1.3);
-  for(const c of world.cars)if(Math.hypot(c.x-fx,c.z-fz)<2.6||Math.hypot(c.x-mx,c.z-mz)<2.6){crashed=true;c.stop=1.5}
+  const penB=pen(px,pz,ph,false),penA=pen(G.x,G.z,G.h,true);
+  const crashed=penA>penB+.001;
   if(crashed&&Math.abs(v)>.5){G.x=px;G.z=pz;G.h=ph;v=-v*.25;G.crashes++;G.shake=.4;sfx('thud');toast(G.crashes===1?'Bump! Careful, you lose the careful driver bonus.':'Bump!',1600)}else if(crashed){G.x=px;G.z=pz;G.h=ph;v=0}
   if(G.attached){G.th+=v/9.3*Math.sin(G.h-G.th)*dt;let d=G.h-G.th;d=Math.atan2(Math.sin(d),Math.cos(d));if(Math.abs(d)>1.25)G.th=G.h-Math.sign(d)*1.25}
   G.v=v;G.dist+=Math.abs(v)*dt;
+  if((fwd||rev)&&!G.park&&Math.abs(v)<.3){G.stuckT=(G.stuckT||0)+dt;if(G.stuckT>2.5)recover()}else G.stuckT=0;
   const ty=dRoad>30?world.TR.H(G.x,G.z):0;G.y=lerp(G.y||0,ty,Math.min(1,dt*6));
   /* engine and sounds */
   const kmh=Math.abs(v)*3.6,gear=v<-.1?'R':Math.min(12,1+Math.floor(kmh/9));const inGear=v<-.1?kmh/16:((kmh%9)/9);G.gear=gear;G.rpm=lerp(G.rpm,kmh<1?650:900+inGear*900+(fwd?250:0),.15);engineSet(G.rpm,fwd?1:rev?.6:0,kmh);
