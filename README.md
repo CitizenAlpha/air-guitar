@@ -14,4 +14,11 @@ A drum kit you play from across the room with full-body tracking.
 - Hands up for cymbals, low and central (or stamp your foot) for the bass drum.
 - Loop records two bars to jam over. Touch and keyboard (Space F H J K L G ;) also work.
 
+## H & H Europe Trucking Sim (`/trucks/`)
+A 3D truck game (three.js). Home menu, Settings, Customise (colours and company name), Truck garage, then a Europe map to pick a country, truck and job.
+- Drive in cab or outside view; forward, reverse, steering, brake, lights, hazards, parking brake, horn, made-up radio stations.
+- Follow the sat-nav to the green zone, stop, press Release cargo. Earnings are saved in the browser.
+- Keys: arrows/WASD, Space brake, P parking brake, L lights, H hazards, R radio, B horn, C view, E release.
+- Truck makers are invented (Scanner, Dan, Mammoth, Bolt, Nordic); no real brands or logos.
+
 Hosted with GitHub Pages from `main`, root folder.
