@@ -134,6 +134,8 @@ body.narrow #switches .hbtn{min-width:76px;min-height:46px;font-size:11px}
 body.narrow #mirror{width:24vw;height:17vh;top:14vh;border-width:6px}
 body.narrow .pad{width:62px;height:62px}body.narrow .pad.big{height:84px}
 body.narrow #outBox{top:calc(env(safe-area-inset-top) + 96px)}
+body.rhd #outBox{right:auto;left:max(12px,env(safe-area-inset-left));align-items:flex-start}
+body.rhd.narrow #switchesOut{right:auto;left:max(10px,env(safe-area-inset-left))}
 #modal{position:fixed;inset:0;z-index:20;background:rgba(5,8,20,.7);display:none;place-items:center;padding:20px}
 #modal.on{display:grid}
 .mbox{background:#17214a;border:2px solid var(--line);border-radius:22px;padding:24px;max-width:440px;width:100%;text-align:center}
@@ -259,6 +261,7 @@ import {RoundedBoxGeometry} from 'three/addons/geometries/RoundedBoxGeometry.js'
 import {Sky} from 'three/addons/objects/Sky.js';
 import {EffectComposer} from 'three/addons/postprocessing/EffectComposer.js';
 import {RenderPass} from 'three/addons/postprocessing/RenderPass.js';
+import {mergeGeometries} from 'three/addons/utils/BufferGeometryUtils.js';
 import {UnrealBloomPass} from 'three/addons/postprocessing/UnrealBloomPass.js';
 import {OutputPass} from 'three/addons/postprocessing/OutputPass.js';
 const $=id=>document.getElementById(id);
@@ -612,6 +615,47 @@ function signTex(lines,bg){return canvasTex(512,256,(c,w,h)=>{c.fillStyle=bg;c.f
   lines.forEach((l,i)=>{c.fillText(l[0],40,h*(i+1)/(lines.length+1));if(l[1]){c.textAlign='right';c.fillText(l[1],w-40,h*(i+1)/(lines.length+1));c.textAlign='left'}})})}
 
 /* --- world --- */
+/* ---------- trees ---------- */
+function texGrey(fn){const c=document.createElement('canvas');c.width=c.height=256;const x=c.getContext('2d');fn(x);const t=new THREE.CanvasTexture(c);t.wrapS=t.wrapT=THREE.RepeatWrapping;t.anisotropy=4;return t}
+let LEAFTEX,BARKTEX;function treeTex(){if(LEAFTEX)return;const rr=rngFrom(99);
+  LEAFTEX=texGrey(x=>{x.fillStyle='#8c8c8c';x.fillRect(0,0,256,256);for(let i=0;i<1700;i++){const v=120+rr()*135|0,px=rr()*256,py=rr()*256,a=rr()*6.3,l=4+rr()*5,w=2+rr()*1.6;x.fillStyle=`rgb(${v},${v},${v})`;
+    for(const dx of [-256,0,256])for(const dy of [-256,0,256]){x.save();x.translate(px+dx,py+dy);x.rotate(a);x.beginPath();x.ellipse(0,0,l,w,0,0,6.283);x.fill();x.restore()}}});LEAFTEX.repeat.set(4,3);
+  BARKTEX=texGrey(x=>{x.fillStyle='#9a9a9a';x.fillRect(0,0,256,256);for(let i=0;i<260;i++){const v=70+rr()*150|0,px=rr()*256,w=1+rr()*4;x.fillStyle=`rgb(${v},${v},${v})`;x.fillRect(px,0,w,256)}for(let i=0;i<90;i++){const v=50+rr()*60|0;x.fillStyle=`rgb(${v},${v},${v})`;x.fillRect(rr()*256,rr()*256,2+rr()*6,8+rr()*30)}});BARKTEX.repeat.set(3,1)}
+const vnz=(x,y,z)=>Math.sin(x*1.7+Math.sin(z*1.3+y*.4))*Math.cos(y*1.9+x*.6)*.55+Math.sin(z*2.3+y*1.1+x*.3)*.45;
+function clumpGeo(r,cx,cy,cz,sx,sy,sz,jag,seed){const g=new THREE.IcosahedronGeometry(1,1),p=g.attributes.position;
+  for(let i=0;i<p.count;i++){const x=p.getX(i),y=p.getY(i),z=p.getZ(i),d=1+jag*vnz(x*2.6+seed,y*2.6-seed*.7,z*2.6+seed*1.3);p.setXYZ(i,cx+x*r*sx*d,cy+y*r*sy*d,cz+z*r*sz*d)}return g}
+function limbGeo(r0,r1,x0,y0,z0,x1,y1,z1,seg){const dx=x1-x0,dy=y1-y0,dz=z1-z0,L=Math.hypot(dx,dy,dz),g=new THREE.CylinderGeometry(r1,r0,L,seg,1,true);g.translate(0,L/2,0);
+  const qq=new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0,1,0),new THREE.Vector3(dx/L,dy/L,dz/L));g.applyQuaternion(qq);g.translate(x0,y0,z0);return g.toNonIndexed()}
+function paintTree(g,cx,cy,cz,y0,y1,base,var_,rng,soft,snow){const p=g.attributes.position,n=g.attributes.normal,cols=new Float32Array(p.count*3),c=new THREE.Color(),b=new THREE.Color(base),A=new THREE.Vector3(),B=new THREE.Vector3(),Cc=new THREE.Vector3(),fn=new THREE.Vector3();
+  for(let i=0;i<p.count;i+=3){A.fromBufferAttribute(p,i);B.fromBufferAttribute(p,i+1);Cc.fromBufferAttribute(p,i+2);fn.subVectors(B,A).cross(Cc.clone().sub(A)).normalize();
+    const my=(A.y+B.y+Cc.y)/3,mx=(A.x+B.x+Cc.x)/3,mz=(A.z+B.z+Cc.z)/3,h=clamp((my-y0)/(y1-y0||1),0,1),out=clamp(Math.hypot(mx-cx,mz-cz)/3,0,1);
+    let k=(.62+.5*h+.18*out+(rng()-.5)*var_)*1.35;c.copy(b).multiplyScalar(k);c.offsetHSL((rng()-.5)*.025,0,(rng()-.5)*.02);
+    if(snow&&soft&&fn.y>.5&&rng()<.55)c.setRGB(.9,.94,.97).multiplyScalar(.85+h*.2);
+    for(let j=0;j<3;j++){cols.set([c.r,c.g,c.b],(i+j)*3);if(soft){A.fromBufferAttribute(p,i+j);B.set(A.x-cx,(A.y-cy)*1.2,A.z-cz).normalize().multiplyScalar(.8).addScaledVector(fn,.3).normalize();n.setXYZ(i+j,B.x,B.y,B.z)}}}
+  g.setAttribute('color',new THREE.BufferAttribute(cols,3));return g}
+function makeTree(sp,seed,snow){const r=rngFrom(seed),L=[],K=[];let leaf='#3f7a2e',bark='#5a3f29',cy=7,y0=3,y1=11;
+  const trunk=(h,r0,r1,bend)=>{const pts=[];for(let i=0;i<=4;i++){const t=i/4;pts.push([Math.sin(t*2.2+seed)*bend*t,h*t,Math.cos(t*1.7+seed)*bend*t])}for(let i=0;i<4;i++)K.push(limbGeo(r0+(r1-r0)*i/4,r0+(r1-r0)*(i+1)/4,...pts[i],...pts[i+1],7));return pts[4]};
+  const limb=(top,ang,up,len,r0)=>{const x1=top[0]+Math.cos(ang)*len,z1=top[2]+Math.sin(ang)*len,y1=top[1]+up;K.push(limbGeo(r0,r0*.45,top[0],top[1]-.4,top[2],x1,y1,z1,5));return [x1,y1,z1]};
+  if(sp==='broad'){const t=trunk(4.3+r()*1.2,.5,.3,.5);cy=t[1]+2.6;for(let i=0;i<3;i++)limb(t,i*2.1+r(),1.6+r(),1.8+r(),.24);
+    const R0=3.5+r()*.8;for(let i=0;i<15;i++){const a=r()*6.283,rr=R0*Math.sqrt(.15+r()*.85)*.8,yy=cy+(r()-.4)*3.2-(rr/R0)*.8;L.push(clumpGeo(1.15+r()*.6,Math.cos(a)*rr,yy,Math.sin(a)*rr,1,.8,1,.34,r()*9))}
+    L.push(clumpGeo(2.4,0,cy+.3,0,1.1,.8,1.1,.25,r()*9));y0=cy-2.8;y1=cy+3}
+  else if(sp==='birch'){bark='#e9e6dc';leaf='#78a845';const t=trunk(7+r()*1.5,.24,.12,.6);cy=t[1]-1;for(let i=0;i<3;i++)limb([0,t[1]*.6+i,0],i*2.2+r(),1.4,1.4,.1);
+    for(let i=0;i<14;i++){const a=r()*6.283,rr=1.35*Math.sqrt(r()),yy=cy-2.4+r()*4.8;L.push(clumpGeo(.8+r()*.4,Math.cos(a)*rr,yy,Math.sin(a)*rr,1,1.15,1,.28,r()*9))}y0=cy-3;y1=cy+3}
+  else if(sp==='poplar'){leaf='#4c8a34';const t=trunk(3,.38,.28,.15);for(let i=0;i<10;i++){const yy=3.5+i*1.05,w=1.6*Math.sin(Math.PI*(.15+i/11*.85))+.25;L.push(clumpGeo(w,(r()-.5)*.5,yy,(r()-.5)*.5,1,1.25,1,.25,r()*9))}y0=2.5;y1=14.5;cy=8.5}
+  else if(sp==='cypress'){leaf='#2c5a2f';trunk(1.6,.3,.22,0);for(let i=0;i<8;i++){const yy=2+i*1.35,w=1.35*Math.sin(Math.PI*Math.min(1,(.22+i/8*.78)))+.18;L.push(clumpGeo(w,(r()-.5)*.25,yy,(r()-.5)*.25,1,1.5,1,.2,r()*9))}y0=1;y1=13;cy=6.5}
+  else if(sp==='olive'){leaf='#8d9c6c';bark='#6b5a45';const t=trunk(1.9,.5,.4,.45);cy=3.9;const tops=[0,1,2].map(i=>limb(t,i*2.1+r(),1.3+r()*.5,1.4+r()*.5,.3));
+    for(let i=0;i<15;i++){const tp=tops[i%3],a=r()*6.283,rr=1.25*Math.sqrt(r());L.push(clumpGeo(.8+r()*.4,tp[0]+Math.cos(a)*rr,tp[1]+.3+r()*1.6,tp[2]+Math.sin(a)*rr,1,.85,1,.28,r()*9))}y0=2.6;y1=5.6}
+  else{leaf=sp==='snowpine'?'#33604c':'#335f2c';bark='#4a3322';const H=11+r()*2.5;trunk(H,.36,.08,.12);const tiers=8;
+    for(let i=0;i<tiers;i++){const t=i/tiers,rad=(3.1-2.6*t)*(.9+r()*.2),hh=2.6-1.1*t,yb=1.8+t*(H-2.6),g=new THREE.ConeGeometry(rad,hh,11,1,true);const pp=g.attributes.position;
+      for(let j=0;j<pp.count;j++){const x=pp.getX(j),y=pp.getY(j),z=pp.getZ(j);if(y<0){const a=Math.atan2(z,x),jag=1+.22*Math.sin(a*11/2*2+i)*(j%2?1:-1)*.5+.1*vnz(x,i,z);pp.setXYZ(j,x*jag,y-.35*(1+Math.sin(a*5+i)),z*jag)}}
+      g.rotateY(r()*6.283);g.translate(0,yb+hh/2,0);L.push(g.toNonIndexed())}
+    y0=1.5;y1=H;cy=H*.45}
+  const leafG=mergeGeometries(L.map(g=>{g.computeVertexNormals();return g.toNonIndexed?(g.index?g.toNonIndexed():g):g}));
+  paintTree(leafG,0,cy,0,y0,y1,leaf,.1,r,true,snow);
+  const barkG=mergeGeometries(K.map(g=>{g.computeVertexNormals();return g}));const br=new THREE.Color(bark),bc=new Float32Array(barkG.attributes.position.count*3),cc2=new THREE.Color(),bp=barkG.attributes.position;
+  for(let i=0;i<bp.count;i+=3){const y=bp.getY(i);cc2.copy(br).multiplyScalar((.85+r()*.2)*1.25);if(sp==='birch'&&vnz(y*3.1,y*1.7,seed)>.45)cc2.setRGB(.13,.12,.11);for(let j=0;j<3;j++)bc.set([cc2.r,cc2.g,cc2.b],(i+j)*3)}
+  barkG.setAttribute('color',new THREE.BufferAttribute(bc,3));return {leaf:leafG,bark:barkG,col:leaf}}
+function bushGeo(seed){const r=rngFrom(seed),L=[];for(let i=0;i<4;i++){const a=i*1.7+r();L.push(clumpGeo(.55+r()*.3,Math.cos(a)*.45,.1+r()*.3,Math.sin(a)*.45,1,.85,1,.25,r()*9))}const g=mergeGeometries(L);return paintTree(g,0,.2,0,-.6,1.1,'#ffffff',.3,r,true,false)}
 function buildWorld(cc,job){
   const C=COUNTRIES[cc],rng=rngFrom(job.seed),pretty=save.set.quality==='pretty',time=save.set.time,left=!!C.left;
   scene=new THREE.Scene();const W={scene,C,left,rng,colliders:new Map(),spinners:[],cars:[],crates:[]};
@@ -710,24 +754,19 @@ function buildWorld(cc,job){
   for(let f=0;f<(pretty?16:9);f++){const x=(rng()-.5)*2000,z=(rng()-.5)*2000,w=60+rng()*60,d=40+rng()*50,rot=rng()*Math.PI;let ok=true;for(const [a,b] of [[-1,-1],[1,-1],[-1,1],[1,1],[0,0]]){const cx=x+(a*w/2*Math.cos(rot)-b*d/2*Math.sin(rot)),cz=z+(a*w/2*Math.sin(rot)+b*d/2*Math.cos(rot));if(!free(cx,cz,16,70)){ok=false;break}}if(!ok)continue;
     const stripes=6,fc=C.fields;for(let s=0;s<stripes;s++){const geo=new THREE.PlaneGeometry(w,d/stripes*.86,10,2);geo.rotateX(-Math.PI/2);geo.rotateY(-rot);const off=(s-(stripes-1)/2)*d/stripes;geo.translate(x-Math.sin(rot)*off,0,z-Math.cos(rot)*off);
       const pa=geo.attributes.position;for(let k=0;k<pa.count;k++)pa.setY(k,TR.H(pa.getX(k),pa.getZ(k))+.06);geo.computeVertexNormals();const m=new THREE.Mesh(geo,M(fc[(f+s)%fc.length]));m.receiveShadow=true;scene.add(m)}}
-  /* trees: two-layer crowns with varied colours */
-  const TT={broad:{trunk:'#5e4128',crown:'#3f7a2e',geo:()=>new THREE.IcosahedronGeometry(3.2,1),cy:6.5,sx:1,sy:.9},pine:{trunk:'#4f3520',crown:'#2a5528',geo:()=>new THREE.ConeGeometry(3,9,8),cy:7.5,sx:1,sy:1},
-    snowpine:{trunk:'#4f3520',crown:'#3d6455',geo:()=>new THREE.ConeGeometry(3,9,8),cy:7.5,sx:1,sy:1},poplar:{trunk:'#5e4128',crown:'#4f8a35',geo:()=>new THREE.IcosahedronGeometry(2,1),cy:8,sx:1,sy:3},
-    cypress:{trunk:'#4f3520',crown:'#2f5a30',geo:()=>new THREE.ConeGeometry(1.6,11,10),cy:7.5,sx:1,sy:1},olive:{trunk:'#6e583f',crown:'#7f8f5a',geo:()=>new THREE.IcosahedronGeometry(2.6,1),cy:4.2,sx:1.25,sy:.75},
-    birch:{trunk:'#e8e6df',crown:'#7caa48',geo:()=>new THREE.IcosahedronGeometry(2.6,1),cy:7,sx:1,sy:1.3}}[C.tree];
-  const nT=pretty?1000:450,trunk=new THREE.InstancedMesh(new THREE.CylinderGeometry(.3,.5,5,7),M(TT.trunk),nT),crown=new THREE.InstancedMesh(TT.geo(),new THREE.MeshLambertMaterial({color:0xffffff,flatShading:true}),nT),crown2=new THREE.InstancedMesh(TT.geo(),new THREE.MeshLambertMaterial({color:0xffffff,flatShading:true}),nT);
-  trunk.castShadow=crown.castShadow=crown2.castShadow=pretty;const crownBase=new THREE.Color(TT.crown);let placed=0;const treePos=[];
+  /* trees: species built from leafy clumps, bark and branches, three shapes per country */
+  const MIX={uk:['broad','broad','birch'],fr:['poplar','broad','broad'],de:['pine','pine','broad'],nl:['broad','poplar','broad'],it:['cypress','olive','cypress'],es:['olive','olive','olive'],pl:['birch','pine','birch'],no:['snowpine','snowpine','birch']}[cc]||[C.tree,C.tree,C.tree];
+  treeTex();const nT=pretty?(matchMedia('(pointer:coarse)').matches?600:900):420,kinds=MIX.map((sp,v)=>makeTree(sp,1000+v*77+cc.charCodeAt(0),!!C.snow)),leafM=new THREE.MeshLambertMaterial({vertexColors:true,side:THREE.DoubleSide,map:LEAFTEX}),barkM=new THREE.MeshLambertMaterial({vertexColors:true,map:BARKTEX});
+  const nPer=Math.ceil(nT/3),meshes=kinds.map(k=>{const t=new THREE.InstancedMesh(k.bark,barkM,nPer),l=new THREE.InstancedMesh(k.leaf,leafM,nPer);t.castShadow=l.castShadow=pretty;l.receiveShadow=pretty;return {t,l,n:0}});
+  let placed=0;const treePos=[];W.treePos=treePos;const crownBase=new THREE.Color(kinds[0].col);
   for(let tries=0;tries<nT*6&&placed<nT;tries++){let x,z;if(rng()<.55){const i=Math.floor(rng()*N),o=(15+rng()*100)*(rng()<.5?-1:1);x=R.x[i]-R.tz[i]*o;z=R.z[i]+R.tx[i]*o}else{x=(rng()-.5)*2700;z=(rng()-.5)*2700}
-    if(!free(x,z,13,55))continue;const y=TR.H(x,z),s=.75+rng()*.7;e.set(0,rng()*6,0);q.setFromEuler(e);
-    mtx.compose(v3.set(x,y+2.5*s,z),q,s3.set(s,s,s));trunk.setMatrixAt(placed,mtx);
-    mtx.compose(v3.set(x,y+TT.cy*s,z),q,s3.set(s*TT.sx,s*TT.sy,s*TT.sx));crown.setMatrixAt(placed,mtx);
-    const o2=(rng()-.5)*1.6*s;mtx.compose(v3.set(x+o2,y+(TT.cy+(C.tree==='broad'||C.tree==='olive'||C.tree==='birch'?1.6:2.4))*s,z-o2),q,s3.set(s*TT.sx*.7,s*TT.sy*.7,s*TT.sx*.7));crown2.setMatrixAt(placed,mtx);
-    col3.copy(crownBase).multiplyScalar(.8+rng()*.4);col3.offsetHSL((rng()-.5)*.04,0,0);crown.setColorAt(placed,col3);col3.multiplyScalar(1.12);crown2.setColorAt(placed,col3);
-    addCol(W,x,z,1.1*s);treePos.push([x,y,z,s]);placed++}
-  trunk.count=crown.count=crown2.count=placed;scene.add(trunk,crown,crown2);
-  if(C.snow){const caps=new THREE.InstancedMesh(new THREE.ConeGeometry(1.6,3.2,8),M('#f4f8fb'),placed);treePos.forEach(([x,y,z,s],i)=>{mtx.compose(v3.set(x,y+(TT.cy+3)*s,z),q.identity(),s3.set(s,s,s));caps.setMatrixAt(i,mtx)});scene.add(caps)}
+    const m=meshes[placed%3];if(m.n>=nPer)continue;if(!free(x,z,13,55))continue;const y=TR.H(x,z)-.15,s=.75+rng()*.6;e.set((rng()-.5)*.06,rng()*6.283,(rng()-.5)*.06);q.setFromEuler(e);
+    mtx.compose(v3.set(x,y,z),q,s3.set(s,s*(.9+rng()*.2),s));m.t.setMatrixAt(m.n,mtx);m.l.setMatrixAt(m.n,mtx);
+    col3.setRGB(1,1,1).multiplyScalar(.86+rng()*.26);col3.offsetHSL((rng()-.5)*.03,(rng()-.5)*.08,0);m.l.setColorAt(m.n,col3);m.t.setColorAt(m.n,col3.setRGB(1,1,1).multiplyScalar(.85+rng()*.3));
+    m.n++;addCol(W,x,z,(placed%3===0&&MIX[0]==='olive'?.9:.8)*s);treePos.push([x,y,z,s]);placed++}
+  meshes.forEach(m=>{m.t.count=m.l.count=m.n;scene.add(m.t,m.l)});
   /* bushes and rocks along the verges */
-  {const nb=pretty?700:260,bush=new THREE.InstancedMesh(new THREE.IcosahedronGeometry(1,1),new THREE.MeshLambertMaterial({color:0xffffff,flatShading:true}),nb);let b=0;
+  {const nb=pretty?700:260,bush=new THREE.InstancedMesh(bushGeo(cc.charCodeAt(1)*31),new THREE.MeshLambertMaterial({vertexColors:true,map:LEAFTEX}),nb);let b=0;
     for(let t=0;t<nb*3&&b<nb;t++){const i=Math.floor(rng()*N),o=(HALF+4+rng()*16)*(rng()<.5?-1:1),x=R.x[i]-R.tz[i]*o,z=R.z[i]+R.tx[i]*o;if(nearPads(x,z,40)||nearRoad(x,z,HALF+3.5))continue;const s=.5+rng()*1.1;
       mtx.compose(v3.set(x,TR.H(x,z)+s*.4,z),q.setFromEuler(e.set(0,rng()*6,0)),s3.set(s*1.3,s*.8,s));bush.setMatrixAt(b,mtx);col3.copy(crownBase).multiplyScalar(.75+rng()*.45);bush.setColorAt(b,col3);b++}
     bush.count=b;bush.castShadow=pretty;scene.add(bush);
@@ -798,13 +837,13 @@ function setView(v){G.view=v;G.truck.glass.forEach(m=>m.visible=v!=='inside');do
   (v==='inside'?$('navSlot'):$('mapScreen')).prepend($('mini'));if(v==='inside')$('navSlot').appendChild($('radioLine'));else $('mapScreen').appendChild($('radioLine'));layoutDash();$('viewBtn').textContent=v==='inside'?'Outside view':'Cab view'}
 function layoutDash(){
   const W=innerWidth,H=innerHeight,narrow=W<600,dh=narrow?Math.min(H*.28,230):Math.min(H*.36,300),left=G&&world&&world.left,dpr=Math.min(devicePixelRatio||1,2),inside=G&&G.view==='inside';
-  document.body.classList.toggle('narrow',narrow);$('dash').style.height=dh+'px';document.querySelectorAll('.pillar').forEach(p=>p.style.bottom=dh+'px');
-  const cx=narrow?.5:(left?.66:.34);
+  document.body.classList.toggle('narrow',narrow);document.body.classList.toggle('rhd',!!left);$('dash').style.height=dh+'px';document.querySelectorAll('.pillar').forEach(p=>p.style.bottom=dh+'px');
+  const cx=narrow?(left?.6:.4):(left?.66:.34);
   const wheel=$('wheel'),ws=narrow?Math.min(W*.72,H*.34):Math.min(H*.46,380);wheel.style.width=ws+'px';wheel.style.left=(cx*W-ws/2)+'px';
   const cl=$('cluster'),cw=narrow?W*.6:Math.min(W*.3,320),ch=cw*.42;cl.width=cw*dpr;cl.height=ch*dpr;cl.style.width=cw+'px';cl.style.height=ch+'px';cl.style.left=(cx*W-cw/2)+'px';cl.style.top=(dh*.07)+'px';
   const mini=$('mini'),mw=inside?(narrow?W*.34:Math.min(W*.22,250)):(narrow?W*.4:Math.min(W*.26,240)),mh=mw*.72;mini.width=mw*dpr;mini.height=mh*dpr;mini.style.width=mw+'px';mini.style.height=mh+'px';
   const ns=$('navSlot');ns.style.border='1.5px solid rgba(255,255,255,.3)';ns.style.borderRadius='14px';ns.style.background='transparent';ns.style.width=(mw+8)+'px';
-  if(narrow){const top=$('hudTop').getBoundingClientRect().bottom+8;ns.style.left=(W-mw-18)+'px';ns.style.bottom=(H-top-mh-30)+'px'}else{ns.style.left=((left?.25:.62)*W-mw/2)+'px';ns.style.bottom=(dh*.2)+'px'}
+  if(narrow){const top=$('hudTop').getBoundingClientRect().bottom+8;ns.style.left=(left?10:W-mw-18)+'px';ns.style.bottom=(H-top-mh-30)+'px'}else{ns.style.left=((left?.25:.62)*W-mw/2)+'px';ns.style.bottom=(dh*.2)+'px'}
   $('mug').style.display=narrow?'none':'block';$('mug').style.left=(left?.9:.035)*W+'px';$('mug').style.bottom='56%';
   const dsw=$('dashSw');dsw.style.bottom=W<1000?(dh+8)+'px':'52%';dsw.style.right=left?'auto':'1%';dsw.style.left=left?'1%':'auto';
   const sw=$('switches'),target=inside&&!narrow?dsw:$('switchesOut');if(sw.parentNode!==target)target.appendChild(sw);
