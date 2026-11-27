@@ -24,6 +24,8 @@ A 3D truck game (three.js). Home menu, Settings, Customise (colours and company 
 - Ground, road, gravel, rock and wall grain come from Babylon.js Assets textures (grass, rockyGround, sand), CC BY 4.0, https://github.com/BabylonJS/Assets, turned into tileable detail maps (`trucks/tex/`).
 - Fuel attendants and depot workers use Quaternius's rigged "Man" model (CC0, https://quaternius.com), via the @netforge/asset-library-files package (`trucks/models/worker.glb`).
 - Brighton seafront (terraces, hotels, shelters, lamps, prom, shingle, Palace of Fun, Marina blocks) is modelled from Brian's own photos of the seafront.
+- Vehicles include the Horizon Tourer coach (passenger trips) and the Dash Express parcel van (invented H&H Express livery, no real brands).
+- Settings > Driving rules > Realistic: crashes, speeding, wrong side and off-road driving bring a police car with sirens and a fine; big crashes bring an ambulance too.
 - The previous version is kept playable at `/trucks-classic/`.
 
 Hosted with GitHub Pages from `main`, root folder.
