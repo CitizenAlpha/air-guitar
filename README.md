@@ -23,6 +23,7 @@ A 3D truck game (three.js). Home menu, Settings, Customise (colours and company 
 - Skies are photographed HDRIs from Poly Haven (CC0), with trees and buildings painted out so only the sky remains (`trucks/sky/`).
 - Ground, road, gravel, rock and wall grain come from Babylon.js Assets textures (grass, rockyGround, sand), CC BY 4.0, https://github.com/BabylonJS/Assets, turned into tileable detail maps (`trucks/tex/`).
 - Fuel attendants and depot workers use Quaternius's rigged "Man" model (CC0, https://quaternius.com), via the @netforge/asset-library-files package (`trucks/models/worker.glb`).
+- Brighton seafront (terraces, hotels, shelters, lamps, prom, shingle, Palace of Fun, Marina blocks) is modelled from Brian's own photos of the seafront.
 - The previous version is kept playable at `/trucks-classic/`.
 
 Hosted with GitHub Pages from `main`, root folder.
