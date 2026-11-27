@@ -577,8 +577,6 @@ let TX=null,TXP=null;
 function loadTex(){if(TXP)return TXP;const L=new THREE.TextureLoader(),one=f=>L.loadAsync('tex/'+f).then(t=>{t.wrapS=t.wrapT=THREE.RepeatWrapping;t.anisotropy=Math.min(8,renderer.capabilities.getMaxAnisotropy());return t});
   return TXP=Promise.all(['grass_d.jpg','rock_d.jpg','sand_d.jpg','asph_d.jpg','rock_n.jpg'].map(one)).then(([grass,rock,sand,asph,rockN])=>TX={grass,rock,sand,asph,rockN}).catch(e=>{console.warn('textures',e);TXP=null;return null})}
 const txc=(t,rx,ry)=>{const c=t.clone();c.repeat.set(rx,ry);c.needsUpdate=true;return c};
-/* handle for automated screenshot tests */
-window.__hh={get G(){return G},get world(){return world},get scene(){return scene},get cam(){return cam},THREE};
 function skyKey(job){if((save.set.weather||'clear')!=='clear')return null;const t=save.set.time;return t}
 function loadSky(key){if(!key)return Promise.resolve(null);if(SKYTEX[key])return Promise.resolve(SKYTEX[key]);
   return new RGBELoader().loadAsync('sky/'+key+'.hdr').then(t=>{const w=t.image.width,h=t.image.height,src=t.image.data,D=SKIES[key],out=new Uint16Array(w*h*2*4);out.set(src);
@@ -732,21 +730,45 @@ function buildTransporter(col){const g=new THREE.Group(),L=13.4,z0=-L/2+1.2,stee
 const CARTYPES={hatch:{L:4.1,W:1.76,b:.95,r:1.47,z1:1.05,z2:.3,z3:-1.5,z4:-1.98,wr:.33,hood:.82,boot:.95},saloon:{L:4.7,W:1.82,b:.98,r:1.45,z1:1.2,z2:.4,z3:-1.0,z4:-1.7,wr:.34,hood:.84,boot:.92},
   estate:{L:4.8,W:1.84,b:1.0,r:1.48,z1:1.28,z2:.48,z3:-2.12,z4:-2.36,wr:.34,hood:.85,boot:1.0},suv:{L:4.7,W:1.92,b:1.18,r:1.8,z1:1.32,z2:.62,z3:-2.05,z4:-2.3,wr:.4,hood:1.08,boot:1.18,lift:.12},
   van:{L:5.3,W:1.98,b:1.2,r:2.4,z1:2.05,z2:1.45,z3:-2.6,z4:-2.64,wr:.38,hood:1.05,boot:1.2,panel:true},bus:{L:11,W:2.5,b:1.3,r:3.1,z1:5.45,z2:5.3,z3:-5.4,z4:-5.45,wr:.5,hood:1.3,boot:1.3,bus:true}};
-let CARGLASS=null;function carGlass(){if(CARGLASS)return CARGLASS;const t=canvasTex(256,128,(c,w,h)=>{const g=c.createLinearGradient(0,0,0,h);g.addColorStop(0,'#5d7386');g.addColorStop(.45,'#1d2630');g.addColorStop(1,'#0b0f14');c.fillStyle=g;c.fillRect(0,0,w,h);
+let CARGLASS=null,CARGLASS2=null;function carGlass(){if(CARGLASS)return CARGLASS;const t=canvasTex(256,128,(c,w,h)=>{const g=c.createLinearGradient(0,0,0,h);g.addColorStop(0,'#5d7386');g.addColorStop(.45,'#1d2630');g.addColorStop(1,'#0b0f14');c.fillStyle=g;c.fillRect(0,0,w,h);
   c.fillStyle='rgba(20,22,26,.9)';for(const x of [.25,.68]){c.beginPath();c.ellipse(w*x,h*.62,w*.09,h*.22,0,0,6.283);c.fill()}c.fillStyle='rgba(255,255,255,.16)';c.beginPath();c.moveTo(w*.1,0);c.lineTo(w*.32,0);c.lineTo(w*.12,h);c.lineTo(0,h);c.fill()});
   return CARGLASS=new THREE.MeshStandardMaterial({map:t,color:0x9aa4ae,roughness:.12,metalness:0,envMapIntensity:.35})}
+/* smooth car bodies: lofted cross-sections along the length, with wheel arches, tapered nose and tail, a tumblehome glasshouse and roof pillars */
+function loft(Zs,ring,closed,caps,nMat){const pos=[],idx=Array.from({length:nMat},()=>[]),R=[];
+  for(const z of Zs){const r=ring(z);R.push(r);for(const p of r)pos.push(p[0],p[1],z)}
+  const n=R[0].length,segs=closed?n:n-1;
+  for(let i=0;i<Zs.length-1;i++)for(let j=0;j<segs;j++){const j2=(j+1)%n,a=i*n+j,b=i*n+j2,c=(i+1)*n+j,d=(i+1)*n+j2,m=R[i][j][2]||0;idx[m].push(a,b,c,b,d,c)}
+  if(caps)for(const [i,dir] of [[0,-1],[Zs.length-1,1]]){let cx=0,cy=0;for(const p of R[i]){cx+=p[0];cy+=p[1]}const ci=pos.length/3;pos.push(cx/n,cy/n,Zs[i]);for(let j=0;j<n;j++){const a=i*n+j,b=i*n+(j+1)%n;if(dir>0)idx[0].push(a,b,ci);else idx[0].push(b,a,ci)}}
+  const g=new THREE.BufferGeometry();g.setAttribute('position',new THREE.Float32BufferAttribute(pos,3));const all=[];let st=0;idx.forEach((l,m)=>{g.addGroup(st,l.length,m);st+=l.length;all.push(...l)});g.setIndex(all);g.computeVertexNormals();return g}
+const CARGEO={};
+function carBodyGeo(type){if(CARGEO[type])return CARGEO[type];const T=CARTYPES[type],L=T.L,W=T.W,lift=T.lift||0,H2=L/2,axles=[H2-.82,-H2+.85],Ra=T.wr+.075;
+  const hw=z=>{const u=z/H2;let k=1;if(u>.74)k-=.2*((u-.74)/.26)**2;if(u<-.8)k-=.15*((-u-.8)/.2)**2;return W/2*k-.01};
+  const lin=(P,z)=>{if(z<=P[0][0])return P[0][1];for(let i=1;i<P.length;i++)if(z<=P[i][0]){const t=(z-P[i-1][0])/(P[i][0]-P[i-1][0]||1);return P[i-1][1]+(P[i][1]-P[i-1][1])*t}return P[P.length-1][1]};
+  const rear=[[-H2,T.boot-.24],[-H2+.07,T.boot-.06],[-H2+.22,T.boot]].filter(p=>p[0]<T.z4-.05),front=[[T.z1,T.b],[H2-.24,T.hood],[H2-.07,T.hood-.06],[H2,T.hood-.24]];
+  const top=[...rear,[T.z4,T.b],...front];
+  const y0=z=>{const u=z/H2;let y=.3+lift;if(u>.86)y+=.14*((u-.86)/.14)**2;if(u<-.86)y+=.12*((-u-.86)/.14)**2;for(const a of axles){const d=Math.abs(z-a);if(d<Ra)y=Math.max(y,T.wr+lift*.5+Math.sqrt(Ra*Ra-d*d)*.98)}return Math.min(y,lin(top,z)-.1)};
+  const K=10,Zs=[];for(let i=0;i<=72;i++)Zs.push(-H2+L*i/72);
+  const lower=loft(Zs,z=>{const a=y0(z),b=lin(top,z),w=hw(z),yc=(a+b)/2,hh=(b-a)/2,r=[];
+    for(let k=0;k<2*K;k++){const t=-Math.PI/2+k/(2*K)*2*Math.PI,c=Math.cos(t),sn=Math.sin(t),ex=.28,bul=1+.035*Math.max(0,1-Math.abs(sn+.15)*1.6);r.push([w*bul*Math.sign(c)*Math.abs(c)**ex,yc+hh*Math.sign(sn)*Math.abs(sn)**ex,0])}return r},true,true,1);
+  /* glasshouse: 0 paint, 1 glass */
+  const ease=t=>1-(1-Math.min(1,Math.max(0,t)))**1.7,yr=z=>z<=T.z3?T.b+(T.r-T.b)*ease((z-T.z4)/(T.z3-T.z4||1)):z>=T.z2?T.b+(T.r-T.b)*ease((T.z1-z)/(T.z1-T.z2||1)):T.r+.025*Math.sin((z-T.z3)/(T.z2-T.z3)*Math.PI);
+  const Zg=[];for(let i=0;i<=48;i++)Zg.push(T.z4+(T.z1-T.z4)*i/48);
+  const winSide=z=>T.panel?z>1.35:true,roofZ=z=>z>T.z3+.04&&z<T.z2-.04;
+  const upper=loft(Zg,z=>{const h=Math.max(0,yr(z)-T.b),g0=hw(z)-.06,g1=g0-Math.min(.16,h*.2),rc=Math.min(.09,h*.35),yb=T.b-.02,r=[];const side=winSide(z)?1:0,tp=roofZ(z)?0:1;
+    const R=[];R.push([g0,yb,side],[ (g0*2+g1)/3,yb+(h-rc)/2,side],[g1,yb+h-rc,0]);for(let k=1;k<=3;k++){const a=k/3*Math.PI/2;R.push([g1-rc+rc*Math.cos(a),yb+h-rc+rc*Math.sin(a),k<3?0:tp])}R.push([g1*.45,yb+h+.012,tp]);
+    const L2=R.slice().reverse().map(p=>[-p[0],p[1],0]);for(let i=0;i<L2.length-1;i++)L2[i][2]=R[R.length-2-i][2];
+    return [...R,...L2.slice(1)]},false,false,2);
+  return CARGEO[type]={lower,upper}}
 function buildCar(color,type='hatch'){const T=CARTYPES[type],g=new THREE.Group(),paint=PAINT(color),glass=carGlass(),black=PLAS(0x16171a,.6),lift=T.lift||0,L=T.L;
   const ext=(pts,w)=>{const sh=new THREE.Shape();sh.moveTo(pts[0][0],pts[0][1]);for(let i=1;i<pts.length;i++)sh.lineTo(pts[i][0],pts[i][1]);const ge=new THREE.ExtrudeGeometry(sh,{depth:w,bevelEnabled:true,bevelThickness:.06,bevelSize:.06,bevelSegments:2,steps:1});ge.translate(0,0,-w/2);ge.rotateY(-Math.PI/2);return ge};
   if(T.bus){box(T.W,2.7,L,paint,0,1.85,0,g);const band=box(T.W+.02,1.05,L-1.2,glass,0,2.35,-.2,g);box(T.W-.1,1.5,.06,glass,0,2.2,L/2+.01,g);box(T.W+.04,.18,L,PLAS(0xf2f2f2,.4),0,3.25,0,g);box(T.W+.03,.35,L,black,0,.65,0,g)}
-  else{const lo=[[-L/2,.32+lift],[L/2,.32+lift],[L/2,T.hood-.18],[L/2-.12,T.hood],[T.z1+.05,T.b],[T.z4,T.b],[-L/2+.06,T.boot],[-L/2,T.boot-.2]];g.add(new THREE.Mesh(ext(lo,T.W-.12),paint));
-    if(T.panel){const pb=ext([[T.z4,T.b-.02],[1.35,T.b-.02],[1.35,T.r],[T.z4,T.r]],T.W-.12);g.add(new THREE.Mesh(pb,paint));const cab=ext([[1.35,T.b],[T.z1,T.b],[T.z2,T.r-.06],[1.35,T.r-.06]],T.W-.2);g.add(new THREE.Mesh(cab,glass))}
-    else{const cab=ext([[T.z4,T.b],[T.z1,T.b],[T.z2,T.r-.05],[T.z3,T.r-.05]],T.W-.24);g.add(new THREE.Mesh(cab,glass));box(T.W-.2,.07,T.z2-T.z3+.12,paint,0,T.r-.02,(T.z2+T.z3)/2,g);
-      for(const sd of [-1,1]){const pil=(za,ya,zb,yb,t)=>{const len=Math.hypot(zb-za,yb-ya),m=box(.07,len,t,paint,sd*(T.W/2-.13),(ya+yb)/2,(za+zb)/2,g);m.rotation.x=Math.atan2(zb-za,yb-ya)};
-        pil(T.z1,T.b,T.z2,T.r-.05,.09);pil(T.z4,T.b,T.z3,T.r-.05,.14);const zb=(T.z2+T.z3)/2+.1;box(.07,T.r-T.b,.12,paint,sd*(T.W/2-.13),(T.r+T.b)/2,zb,g)}}
-    for(const sd of [-1,1]){box(.12,.1,.22,black,sd*(T.W/2+.02),T.b+.05,T.z1-.1,g)}}
+  else{const G2=carBodyGeo(type),gl=CARGLASS2||(CARGLASS2=new THREE.MeshPhysicalMaterial({color:0x10161c,roughness:.04,metalness:.1,clearcoat:1,envMapIntensity:1.1}));g.add(new THREE.Mesh(G2.lower,paint),new THREE.Mesh(G2.upper,[paint,gl]));
+    for(const sd of [-1,1]){const zb=T.panel?1.3:(T.z2+T.z3)/2+.15,bp=box(.06,T.r-T.b-.08,.11,paint,sd*(T.W/2-.17),(T.r+T.b)/2-.05,zb,g);bp.rotation.z=sd*.08;box(.12,.1,.22,black,sd*(T.W/2+.02),T.b+.05,T.z1-.1,g);
+      const sk=box(.03,.07,T.L*.55,black,sd*(T.W/2-.005),.42+(T.lift||0),0,g)}}
   const hl=new THREE.MeshStandardMaterial({color:0xf4f6ff,emissive:0x1a1a14,roughness:.05}),tl=new THREE.MeshStandardMaterial({color:0xc01818,emissive:0x300000});
-  for(const s of [-1,1]){rbox(.38,.13,.06,.03,hl,s*(T.W/2-.36),(T.bus?.95:T.hood-.12),L/2+.02,g);rbox(.36,.14,.06,.03,tl,s*(T.W/2-.3),(T.bus?1:T.boot-.12),-L/2-.02,g)}
-  box(T.W-.3,.22,.08,black,0,.48+lift,L/2+.04,g);box(T.W-.3,.22,.08,black,0,.48+lift,-L/2-.04,g);
+  if(T.bus){for(const s of [-1,1]){rbox(.38,.13,.06,.03,hl,s*(T.W/2-.36),.95,L/2+.02,g);rbox(.36,.14,.06,.03,tl,s*(T.W/2-.3),1,-L/2-.02,g)}box(T.W-.3,.22,.08,black,0,.48+lift,L/2+.04,g);box(T.W-.3,.22,.08,black,0,.48+lift,-L/2-.04,g)}
+  else{for(const s of [-1,1]){const h1=rbox(.36,.1,.16,.04,hl,s*(T.W/2-.34),T.hood-.2,L/2-.07,g);h1.rotation.x=-.35;h1.rotation.y=s*.25;const t1=rbox(.3,.12,.12,.04,tl,s*(T.W/2-.27),T.boot-.17,-L/2+.03,g);t1.rotation.y=-s*.3}
+    const fb=rbox(T.W*.8,.17,.16,.06,black,0,.4+lift,L/2-.02,g),rb=rbox(T.W*.82,.17,.16,.06,black,0,.42+lift,-L/2+.02,g);rbox(T.W*.42,.1,.06,.03,PLAS(0x0c0d0f,.4),0,T.hood-.3,L/2-.01,g)}
   const axz=T.bus?[L/2-2.4,-L/2+2.6]:[L/2-.82,-L/2+.85];for(const z of axz)for(const s of [-1,1]){const w=makeWheel(T.wr,T.bus?.3:.24);w.position.set(s*(T.W/2-.1),T.wr,z);g.add(w)}
   g.traverse(o=>{if(o.isMesh){o.castShadow=true;o.receiveShadow=true}});
   return {g,hl,tl}}
@@ -1618,7 +1640,7 @@ function loop(t){
   G.frames++;if(G.frames>30&&G.frames<200){G.ftime+=dt}if(G.frames===200&&!G.downgraded&&G.ftime/170>.042&&save.set.quality==='pretty'){G.downgraded=true;save.set.quality='fast';store();renderer.shadowMap.enabled=false;if(composer){composer.dispose();composer=null}scene.traverse(o=>{if(o.material)o.material.needsUpdate=true});setView(G.view);onResize();toast('Switched to Fast graphics so the game runs smoothly.',3000)}
   raf=requestAnimationFrame(loop);
 }
-window.__hh={get G(){return G},get world(){return world},keys,startGame,show,save:()=>save,tryRelease,radioSet,unloadTick,startRefuel,refuelTick,get radio(){return radio}};
+window.__hh={get G(){return G},get world(){return world},get cam(){return cam},jobs:cc=>makeJobs(cc),keys,startGame,show,save:()=>save,tryRelease,radioSet,unloadTick,startRefuel,refuelTick,get radio(){return radio}};
 show('home');
 </script>
 </body>
