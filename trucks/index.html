@@ -293,6 +293,7 @@ import {RenderPass} from 'three/addons/postprocessing/RenderPass.js';
 import {mergeGeometries} from 'three/addons/utils/BufferGeometryUtils.js';
 import {UnrealBloomPass} from 'three/addons/postprocessing/UnrealBloomPass.js';
 import {OutputPass} from 'three/addons/postprocessing/OutputPass.js';
+import {RGBELoader} from 'three/addons/loaders/RGBELoader.js';
 const $=id=>document.getElementById(id);
 const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
 const lerp=(a,b,t)=>a+(b-a)*t;
@@ -567,8 +568,22 @@ function ask(title,text,btns){$('mTitle').textContent=title;$('mText').textConte
 /* ===================== 3D GAME ===================== */
 const canvas=$('gl');
 let renderer=null,scene,cam,mirCam,world=null,raf=0,last=0,composer=null,bloom=null;
+/* photographed skies (Poly Haven CC0 HDRIs, trees and buildings painted out, sky half only). sun = direction of the sun in the photo, hz = horizon colour the fog matches, sky = average sky light, bi = brightness */
+const SKIES={day:{sun:[.7954,.18,.5787],hz:[.3223,.4822,.7337],sky:[.1394,.2552,.5603],bi:1.25},
+  sunset:{sun:[.7954,.18,.5787],hz:[.6448,.4681,.3967],sky:[.1834,.1706,.3164],bi:1.5},night:{sun:null,hz:[.1482,.1832,.1849],sky:[.0768,.0908,.1277],bi:.3}};
+const SKYTEX={};let photoSky=null;
+/* handle for automated screenshot tests */
+window.__hh={get G(){return G},get world(){return world},get scene(){return scene},get cam(){return cam},THREE};
+function skyKey(job){if((save.set.weather||'clear')!=='clear')return null;const t=save.set.time;return t}
+function loadSky(key){if(!key)return Promise.resolve(null);if(SKYTEX[key])return Promise.resolve(SKYTEX[key]);
+  return new RGBELoader().loadAsync('sky/'+key+'.hdr').then(t=>{const w=t.image.width,h=t.image.height,src=t.image.data,D=SKIES[key],out=new Uint16Array(w*h*2*4);out.set(src);
+    /* lower half: horizon colour fading to a soft ground, so reflections and lighting see the ground below */
+    const H=THREE.DataUtils.toHalfFloat,g=[D.sky[0]*.55,D.sky[1]*.6,D.sky[2]*.42];
+    for(let y=0;y<h;y++){const k=Math.min(1,y/10),c=[0,1,2].map(i=>H(D.hz[i]*(1-k)+g[i]*k)),one=H(1);for(let x=0;x<w;x++){const o=((h+y)*w+x)*4;out[o]=c[0];out[o+1]=c[1];out[o+2]=c[2];out[o+3]=one}}
+    const tex=new THREE.DataTexture(out,w,h*2,THREE.RGBAFormat,THREE.HalfFloatType);tex.flipY=true;tex.mapping=THREE.EquirectangularReflectionMapping;tex.colorSpace=THREE.LinearSRGBColorSpace;
+    tex.minFilter=THREE.LinearFilter;tex.magFilter=THREE.LinearFilter;tex.generateMipmaps=false;tex.needsUpdate=true;t.dispose();return SKYTEX[key]={key,tex}}).catch(e=>{console.warn('sky',e);return null})}
 const keys={};const pads={};
-function ensureRenderer(){if(renderer)return;renderer=new THREE.WebGLRenderer({canvas,antialias:true,powerPreference:'high-performance'});renderer.shadowMap.type=THREE.PCFSoftShadowMap;renderer.toneMapping=THREE.ACESFilmicToneMapping;addEventListener('resize',onResize)}
+function ensureRenderer(){if(renderer)return;renderer=new THREE.WebGLRenderer({canvas,antialias:true,powerPreference:'high-performance'});renderer.shadowMap.type=THREE.PCFShadowMap;renderer.toneMapping=THREE.ACESFilmicToneMapping;addEventListener('resize',onResize)}
 function onResize(){if(!renderer||current!=='game'||!cam)return;const pr=Math.min(devicePixelRatio||1,save.set.quality==='pretty'?1.5:1);renderer.setPixelRatio(pr);renderer.setSize(innerWidth,innerHeight,false);if(composer){composer.setPixelRatio(pr);composer.setSize(innerWidth,innerHeight)}cam.aspect=innerWidth/innerHeight;cam.updateProjectionMatrix();layoutDash()}
 function canvasTex(w,h,draw,rep){const c=document.createElement('canvas');c.width=w;c.height=h;draw(c.getContext('2d'),w,h);const t=new THREE.CanvasTexture(c);t.colorSpace=THREE.SRGBColorSpace;if(rep){t.wrapS=t.wrapT=THREE.RepeatWrapping;t.repeat.set(rep[0],rep[1])}t.anisotropy=renderer.capabilities.getMaxAnisotropy();return t}
 const M=(c,o={})=>new THREE.MeshLambertMaterial({color:c,...o});
@@ -677,7 +692,7 @@ function buildTrailer(col,cargo){if(cargo==='New cars')return buildTransporter(c
   const inside=canvasTex(256,256,(c,w,h)=>{c.fillStyle='#0d0e10';c.fillRect(0,0,w,h);for(let y=h-56;y>40;y-=52)for(let x=8;x<w-50;x+=60){const g=c.createLinearGradient(x,y,x+54,y+48);g.addColorStop(0,'#b98448');g.addColorStop(1,'#7a5228');c.fillStyle=g;c.fillRect(x,y,54,48);c.fillStyle='rgba(230,210,160,.5)';c.fillRect(x+24,y,6,48)}const sh=c.createRadialGradient(w/2,h*.7,10,w/2,h/2,w*.8);sh.addColorStop(0,'rgba(0,0,0,0)');sh.addColorStop(1,'rgba(0,0,0,.6)');c.fillStyle=sh;c.fillRect(0,0,w,h)});
   const body=new THREE.Mesh(new THREE.BoxGeometry(2.5,2.9,L),[curtM,curtM,P(col.trailer,{roughness:.6}),black,P(col.trailer,{roughness:.6}),new THREE.MeshLambertMaterial({map:inside})]);body.position.set(0,2.75,z0);body.castShadow=true;g.add(body);
   for(const y of [1.28,4.22])for(const s of [-1,1])box(.08,.1,L,alu,s*1.25,y,z0,g);
-  box(2.56,.1,L,alu,0,4.24,z0,g);
+  box(2.56,.1,L,new THREE.MeshStandardMaterial({color:0xd6dade,roughness:.62,metalness:.35}),0,4.24,z0,g);
   for(const s of [-1,1])for(let k=0;k<2;k++)box(.04,.05,5.5,alu,s*1.2,.7+k*.3,-4.6,g);
   box(2.2,.3,L-.4,black,0,1.08,z0,g);
   const doors=canvasTex(256,256,(c,w,h)=>{c.fillStyle=col.trailer;c.fillRect(0,0,w,h);c.strokeStyle='rgba(0,0,0,.35)';c.lineWidth=3;c.strokeRect(6,6,w-12,h-12);c.beginPath();c.moveTo(w/2,6);c.lineTo(w/2,h-6);c.stroke();
@@ -1129,10 +1144,16 @@ function buildWorld(cc,job){
   const WX=save.set.weather||'clear';W.WX=WX;
   if(WX!=='clear'){const snow=WX==='snow';T.fog=time==='night'?'#1a2030':snow?'#d6dbe0':'#8e979f';T.fogN=snow?70:110;T.fogF=snow?950:1300;T.si*=.35;T.hemi*=1.5;T.bloom*=.5}
   W.T=T;renderer.toneMappingExposure=T.exp;
+  const PH=photoSky&&SKIES[photoSky.key];
   const sunDir=new THREE.Vector3().setFromSphericalCoords(1,THREE.MathUtils.degToRad(90-T.elev),THREE.MathUtils.degToRad(T.az));
+  if(PH&&PH.sun){sunDir.fromArray(PH.sun);const minE=THREE.MathUtils.degToRad(time==='day'?30:9),el=Math.asin(sunDir.y);if(el<minE){const hh=Math.hypot(sunDir.x,sunDir.z);sunDir.set(sunDir.x/hh*Math.cos(minE),Math.sin(minE),sunDir.z/hh*Math.cos(minE))}}
   let sky;
   const envScene=new THREE.Scene();
-  if(time==='night'){
+  if(PH){
+    sky=new THREE.Group();scene.background=photoSky.tex;scene.backgroundIntensity=PH.bi;
+    if(time==='night'){const moon=new THREE.Mesh(new THREE.CircleGeometry(48,32),new THREE.MeshBasicMaterial({color:0xf4f1e0,fog:false}));moon.position.copy(sunDir).multiplyScalar(2900);moon.lookAt(0,0,0);sky.add(moon)}
+    T.fog=new THREE.Color().setRGB(PH.hz[0]*PH.bi,PH.hz[1]*PH.bi,PH.hz[2]*PH.bi);
+  }else if(time==='night'){
     const mk=r=>new THREE.Mesh(new THREE.SphereGeometry(r,24,12),new THREE.ShaderMaterial({side:THREE.BackSide,depthWrite:false,fog:false,uniforms:{top:{value:new THREE.Color('#02040f')},bot:{value:new THREE.Color('#1a2350')}},
       vertexShader:'varying vec3 vP;void main(){vP=normalize(position);gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.);}',
       fragmentShader:'uniform vec3 top;uniform vec3 bot;varying vec3 vP;void main(){float h=clamp(vP.y*1.8+.02,0.,1.);gl_FragColor=vec4(mix(bot,top,pow(h,.6)),1.);\n#include <colorspace_fragment>\n}'}));
@@ -1145,13 +1166,14 @@ function buildWorld(cc,job){
     sky=mk(4000);envScene.add(mk(50));
   }
   scene.add(sky);W.sky=sky;
-  const pm=new THREE.PMREMGenerator(renderer);scene.environment=pm.fromScene(envScene,.03).texture;pm.dispose();
+  const pm=new THREE.PMREMGenerator(renderer);scene.environment=(PH?pm.fromEquirectangular(photoSky.tex):pm.fromScene(envScene,.03)).texture;pm.dispose();
   scene.fog=new THREE.Fog(T.fog,T.fogN,T.fogF);
-  scene.add(new THREE.HemisphereLight(time==='night'?0x6070b0:0xd6e6ff,new THREE.Color(C.grass).multiplyScalar(.7),T.hemi));
+  {const skyC=PH?new THREE.Color().fromArray(PH.sky).multiplyScalar(1/Math.max(...PH.sky)).lerp(new THREE.Color(1,1,1),.5):new THREE.Color(time==='night'?0x6070b0:0xd6e6ff);
+    scene.add(new THREE.HemisphereLight(skyC,new THREE.Color(C.grass).multiplyScalar(.7),T.hemi*(PH?1.15:1)))}
   const sun=new THREE.DirectionalLight(T.sun,T.si);W.sunOff=sunDir.clone().multiplyScalar(400);if(W.sunOff.y<60)W.sunOff.y=60;sun.position.copy(W.sunOff);scene.add(sun);scene.add(sun.target);W.sun=sun;
-  if(pretty){sun.castShadow=true;sun.shadow.mapSize.set(2048,2048);const sc=sun.shadow.camera;sc.left=-60;sc.right=60;sc.top=60;sc.bottom=-60;sc.near=10;sc.far=1000;sun.shadow.bias=-.0004;sun.shadow.normalBias=.03}
+  if(pretty){sun.castShadow=true;sun.shadow.radius=3.5;sun.shadow.mapSize.set(2048,2048);const sc=sun.shadow.camera;sc.left=-60;sc.right=60;sc.top=60;sc.bottom=-60;sc.near=10;sc.far=1000;sun.shadow.bias=-.0004;sun.shadow.normalBias=.03}
   /* clouds: puffy layered sprites; how many comes from Settings, and bad weather brings low grey cloud */
-  {const lvl=WX!=='clear'?'lots':(save.set.clouds||'some'),n=lvl==='none'?0:lvl==='some'?(pretty?26:12):(pretty?60:26);
+  {const lvl=WX!=='clear'?'lots':(save.set.clouds||'some'),n=Math.round((lvl==='none'?0:lvl==='some'?(pretty?26:12):(pretty?60:26))*(PH?(time==='night'?.3:.6):1));
     if(n){const texs=[0,1,2].map(v=>canvasTex(256,256,(c,w,h)=>{const r2=rngFrom(v*91+7);for(let i=0;i<34;i++){const x=50+r2()*(w-100),y=90+r2()*70-Math.abs(x-w/2)*.25,r=20+r2()*36,gg=c.createRadialGradient(x,y-r*.3,0,x,y,r);gg.addColorStop(0,'rgba(255,255,255,.95)');gg.addColorStop(.6,'rgba(245,247,250,.55)');gg.addColorStop(1,'rgba(235,240,245,0)');c.fillStyle=gg;c.fillRect(0,0,w,h)}
         const sh=c.createLinearGradient(0,90,0,200);sh.addColorStop(0,'rgba(0,0,0,0)');sh.addColorStop(1,'rgba(90,100,115,.28)');c.globalCompositeOperation='source-atop';c.fillStyle=sh;c.fillRect(0,0,w,h)}));
       const tint=WX!=='clear'?(time==='night'?0x40485a:0x9aa2ab):time==='sunset'?0xffc6a8:time==='night'?0x30384e:0xffffff;
@@ -1330,7 +1352,7 @@ function nearestIdx(R,x,z,hint){let best=-1,bd=1e9;if(hint>=0){for(let k=-40;k<=
 let G=null;
 function startGame(cc,job){
   show('game');$('loading').style.display='grid';ensureRenderer();
-  setTimeout(()=>{try{realStart(cc,job)}catch(e){console.error(e);$('loading').textContent='Sorry, this device could not start 3D: '+e.message}},30);
+  loadSky(skyKey(job)).then(sk=>{photoSky=sk;if(current!=='game')return;setTimeout(()=>{try{realStart(cc,job)}catch(e){console.error(e);$('loading').textContent='Sorry, this device could not start 3D: '+e.message}},30)});
 }
 function realStart(cc,job){
   if(world)disposeWorld();
@@ -1353,7 +1375,7 @@ function realStart(cc,job){
   toast('Release the parking brake (P), then hold GO or the up arrow!',5000);
   place.init=false;last=performance.now();cancelAnimationFrame(raf);raf=requestAnimationFrame(loop);
 }
-function disposeWorld(){scene.traverse(o=>{if(o.geometry)o.geometry.dispose();if(o.material){(Array.isArray(o.material)?o.material:[o.material]).forEach(m=>{if(m.map)m.map.dispose();m.dispose()})}});world=null;scene=null}
+function disposeWorld(){if(scene.environment)scene.environment.dispose();scene.traverse(o=>{if(o.geometry)o.geometry.dispose();if(o.material){(Array.isArray(o.material)?o.material:[o.material]).forEach(m=>{if(m.map)m.map.dispose();m.dispose()})}});world=null;scene=null}
 let wxS=null;function weatherSnd(kind){if(wxS){try{wxS.src.stop()}catch(e){}wxS.g.disconnect();wxS=null}if(!ac||!kind||kind==='clear'||kind==='snow')return;const src=ac.createBufferSource();src.buffer=noiseBuf;src.loop=true;const f=filt(kind==='rain'?'lowpass':'bandpass',kind==='rain'?2200:4200,kind==='hail'?.7:0),g=gn();g.gain.value=kind==='rain'?.07:.05;src.connect(f);f.connect(g);g.connect(master);src.start();wxS={src,g}}
 function exitGame(){weatherSnd(null);document.body.classList.remove('wet','cine');cancelAnimationFrame(raf);raf=0;if(composer){composer.dispose();composer=null}engineStop();horn(false);radio.on=false;radioLabel();G=null;if(world)disposeWorld();renderer&&renderer.renderLists.dispose();document.body.classList.remove('inside','mir');show('home')}
 function setLights(on){if(!G)return;G.lights=on;G.truck.headMat.emissive.setHex(on?0xfff1c0:0x222018);G.truck.lights.forEach(l=>l.intensity=on?420:0);G.truck.tail.emissive.setHex(on?0xa00000:0x300000);G.trailer.tail.emissive.setHex(on?0xa00000:0x300000);$('swLights').setAttribute('aria-pressed',on)}
