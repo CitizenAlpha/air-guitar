@@ -21,6 +21,7 @@ A 3D truck game (three.js). Home menu, Settings, Customise (colours and company 
 - Keys: arrows/WASD, Space brake, P parking brake, L lights, H hazards, R radio, B horn, C view, E release.
 - Truck makers are invented (Scanner, Dan, Mammoth, Bolt, Nordic); no real brands or logos.
 - Skies are photographed HDRIs from Poly Haven (CC0), with trees and buildings painted out so only the sky remains (`trucks/sky/`).
+- Ground, road, gravel, rock and wall grain come from Babylon.js Assets textures (grass, rockyGround, sand), CC BY 4.0, https://github.com/BabylonJS/Assets, turned into tileable detail maps (`trucks/tex/`).
 - The previous version is kept playable at `/trucks-classic/`.
 
 Hosted with GitHub Pages from `main`, root folder.
