@@ -148,8 +148,8 @@ body.rhd.narrow #switchesOut{right:auto;left:max(10px,env(safe-area-inset-left))
 body.inside.wet #drops{display:block}
 body.cine #dash,body.cine .pillar,body.cine #roof,body.cine #mirror,body.cine #drops{display:none!important}
 #wipers{position:absolute;inset:0;z-index:2;pointer-events:none;display:none}body.inside #wipers{display:block}body.cine #wipers{display:none!important}
-.blade{position:absolute;bottom:calc(min(36vh,300px) - 6px);width:7px;height:min(44vh,420px);margin-left:-3px;transform-origin:50% 100%;transform:rotate(-80deg);border-radius:4px;background:linear-gradient(90deg,#0b0c0e,#2a2c31 60%,#0b0c0e);box-shadow:0 0 3px rgba(0,0,0,.6)}
-.blade::after{content:'';position:absolute;left:-4px;right:-4px;top:4%;height:70%;border-radius:3px;background:#111;}
+.blade{position:absolute;top:calc(7vh - 2px);width:7px;height:min(44vh,420px);margin-left:-3px;transform-origin:50% 0;transform:rotate(80deg);border-radius:4px;background:linear-gradient(90deg,#0b0c0e,#2a2c31 60%,#0b0c0e);box-shadow:0 0 3px rgba(0,0,0,.6)}
+.blade::after{content:'';position:absolute;left:-4px;right:-4px;bottom:4%;height:70%;border-radius:3px;background:#111;}
 #wipeA{left:27%}#wipeB{left:58%}body.rhd #wipeA{left:42%}body.rhd #wipeB{left:73%}
 #speedOut .sig{font-style:normal;color:#3cff7a;font-size:.6em;margin:0 6px;vertical-align:middle}
 .ppsum{text-align:center;font-size:18px;margin:0 0 14px}.pp{display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:12px;max-width:1100px;margin:0 auto}.ppc{position:relative;background:rgba(255,255,255,.06);border:2px solid var(--line);border-radius:14px;padding:10px;text-align:center;overflow:hidden}.ppc:not(.got) .ppf{filter:grayscale(1);opacity:.35}.ppf svg{width:72px;height:48px;border-radius:4px}.ppn{font-weight:800;font-size:14px;margin-top:6px}.stamp{position:absolute;right:4px;top:6px;transform:rotate(-14deg);border:3px solid #e0343a;color:#e0343a;border-radius:8px;padding:2px 6px;font:900 11px/1.1 Nunito,sans-serif;background:rgba(255,255,255,.85)}.stamp b{font-size:14px}
@@ -398,6 +398,9 @@ function truckSVG(t,col,withTrailer){
 let ac=null,master=null,radioBus=null,noiseBuf=null;
 /* iPhones only allow sound that starts during a tap: resume and play a silent blip on every tap so audio stays unlocked even though the world loads a second or two later */
 function unlockAudio(){if(!ac)return;if(ac.state!=='running')ac.resume().catch(()=>{});try{const b=ac.createBufferSource();b.buffer=ac.createBuffer(1,1,22050);b.connect(ac.destination);b.start(0)}catch(e){}}
+/* iPhones can silently mute an audio context that sat idle on the home screen, so every Drive tap builds a fresh one inside the tap */
+function freshAudio(){engineStop();weatherSnd(null);if(ac){try{ac.close()}catch(e){}ac=null}initAudio()}
+let musicTimer=0;
 function initAudio(){
   if(ac){unlockAudio();return}
   try{if(navigator.audioSession)navigator.audioSession.type='playback'}catch(e){}
@@ -406,7 +409,7 @@ function initAudio(){
   master=ac.createGain();master.gain.value=save.set.vol;master.connect(comp);
   radioBus=ac.createGain();radioBus.gain.value=save.set.rvol*.55;const rf=ac.createBiquadFilter();rf.type='lowpass';rf.frequency.value=7000;radioBus.connect(rf);rf.connect(master);
   noiseBuf=ac.createBuffer(1,ac.sampleRate*2,ac.sampleRate);const d=noiseBuf.getChannelData(0);for(let i=0;i<d.length;i++)d[i]=Math.random()*2-1;
-  setInterval(musicTick,25);unlockAudio();
+  if(!musicTimer)musicTimer=setInterval(musicTick,25);unlockAudio();
 }
 for(const ev of ['pointerdown','touchend','click'])document.addEventListener(ev,initAudio,{capture:true});
 function env(g,t,peak,dec,att=.004){g.gain.setValueAtTime(.0001,t);g.gain.exponentialRampToValueAtTime(Math.max(.0002,peak),t+att);g.gain.exponentialRampToValueAtTime(.0001,t+dec)}
@@ -465,11 +468,20 @@ function sing(f,t,dur,vol,vowel){const F={a:[800,1150,2900],o:[450,800,2830],u:[
   const lfo=osc('sine',5.4,t,dur+.3),lg=gn();lg.gain.setValueAtTime(0,t);lg.gain.linearRampToValueAtTime(f*.006,t+.25);lfo.connect(lg);
   for(const det of [-6,0,7]){const o=osc('sawtooth',f*2**(det/1200),t,dur+.3);lg.connect(o.frequency);for(const b of fs)o.connect(b)}
   const body=osc('sine',f,t,dur+.3),bg=gn();bg.gain.value=.25;body.connect(bg);bg.connect(out);out.connect(radioBus)}
-let radio={on:false,st:0,step:0,next:0,song:0,mel:null};
+let radio={on:false,st:0,step:0,next:0,song:0,mel:null,net:-1};
+/* live BBC stations (worldwide streams; unofficial addresses, so they can change) */
+const BBC=[['Radio 1','01505109','bbc_radio_one'],['Radio 2','74208725','bbc_radio_two'],['Radio 3','23461179','bbc_radio_three'],['Radio 4','55057080','bbc_radio_fourfm'],['Radio 5 Live','89021708','bbc_radio_five_live'],['Radio 6 Music','81827798','bbc_6music'],['World Service','87948813','bbc_world_service']]
+  .map(([name,pool,id])=>({name:'BBC '+name,url:`https://as-hls-ww-live.akamaized.net/pool_${pool}/live/ww/${id}/${id}.isml/${id}-audio%3d96000.norewind.m3u8`}));
+let netEl=null,netHls=null;
+function netStop(){if(netHls){try{netHls.destroy()}catch(e){}netHls=null}if(netEl){try{netEl.pause();netEl.removeAttribute('src');netEl.load()}catch(e){}}}
+function netPlay(i){netStop();const st=BBC[i];if(!netEl){netEl=new Audio();netEl.preload='none';netEl.onerror=()=>{if(radio.net>=0)toast("Can't reach "+BBC[radio.net].name+' right now',2400)}}
+  netEl.volume=Math.min(1,save.set.rvol);
+  if(netEl.canPlayType('application/vnd.apple.mpegurl')){netEl.src=st.url;netEl.play().catch(()=>{})}
+  else import('https://cdn.jsdelivr.net/npm/hls.js@1/dist/hls.mjs').then(m=>{const H=m.default;if(radio.net!==i)return;if(!H.isSupported())throw new Error('no hls');netHls=new H();netHls.loadSource(st.url);netHls.attachMedia(netEl);netEl.play().catch(()=>{})}).catch(()=>toast("Can't play "+st.name+' in this browser',2400))}
 const NF=n=>440*2**((n-69)/12);
 function makeMelody(st,seed){const r=rngFrom(seed),m=[];for(let i=0;i<32;i++){const p=i%4===0?.55:i%2===0?.35:.1;m.push(r()<p?st.scale[Math.floor(r()*st.scale.length)]+12*(r()<.25?1:0):null)}for(let i=16;i<32;i++)if(r()<.6)m[i]=m[i-16];return m}
 function radioSet(on,st){if(on){radio.on=true;radio.st=st;radio.step=0;radio.song=Math.floor(Math.random()*STATIONS[st].songs.length);radio.mel=makeMelody(STATIONS[st],st*100+radio.song);radio.carol=STATIONS[st].carols?parseCarol(STATIONS[st].songs[radio.song]):null;if(ac)radio.next=ac.currentTime+.35;sfx('static')}else radio.on=false;radioLabel()}
-function radioLabel(){const el=$('radioLine');if(!radio.on){el.textContent='Radio off';return}const st=STATIONS[radio.st];el.textContent=`${st.name} · "${st.songs[radio.song%st.songs.length]}"`}
+function radioLabel(){const el=$('radioLine');if(!radio.on){el.textContent='Radio off';return}if(radio.net>=0){el.textContent=BBC[radio.net].name+' · live';return}const st=STATIONS[radio.st];el.textContent=`${st.name} · "${st.songs[radio.song%st.songs.length]}"`}
 function voice(type,f,t,dur,vol,cut){const g=gn();env(g,t,vol,dur);chain(osc(type,f,t,dur),filt('lowpass',cut||3000),g,radioBus)}
 function drum(k,t,v){if(k==='k'){const o=osc('sine',130,t,.3);o.frequency.exponentialRampToValueAtTime(45,t+.12);const g=gn();env(g,t,.9*v,.28);chain(o,g,radioBus)}
   else if(k==='s'){const g=gn();env(g,t,.45*v,.16);chain(nz(t,.18),filt('highpass',1500),g,radioBus)}
@@ -489,7 +501,7 @@ function musicStep(st,step,t,spb){
     const m=radio.mel[step%32];if(m!=null){let L=1;while(L<6&&radio.mel[(step+L)%32]==null)L++;sing(NF(st.key+m),t,spb*L*.92,.1,'aoeu'[Math.floor(step/32)%4])}return}
   const m=radio.mel[step%32];if(m!=null&&bar>=0){const n=st.key+12+m+(S==='chill'?0:0);voice(S==='electro'?'sawtooth':S==='pop'?'square':'triangle',NF(n),t,spb*(S==='chill'?3:1.7),S==='pop'?.07:.09,S==='electro'?2200:2600)}
 }
-function musicTick(){if(!radio.on||!ac)return;const st=STATIONS[radio.st],spb=60/(radio.carol?radio.carol.bpm:st.bpm)/4;if(radio.next<ac.currentTime-.2)radio.next=ac.currentTime+.05;
+function musicTick(){if(!radio.on||!ac||radio.net>=0)return;const st=STATIONS[radio.st],spb=60/(radio.carol?radio.carol.bpm:st.bpm)/4;if(radio.next<ac.currentTime-.2)radio.next=ac.currentTime+.05;
   while(radio.next<ac.currentTime+.15){musicStep(st,radio.step,radio.next,spb);radio.next+=spb;radio.step++;
     if(radio.carol){if(radio.step>=radio.carol.len){radio.step=0;radio.song++;radio.carol=parseCarol(st.songs[radio.song%st.songs.length]);radioLabel()}}else if(radio.step%(16*24)===0){radio.song++;radio.mel=makeMelody(st,radio.st*100+radio.song);radioLabel()}}}
 
@@ -524,7 +536,7 @@ function bgDraw(t){
 function renderSettings(){$('vol').value=save.set.vol;$('rvol').value=save.set.rvol;document.querySelectorAll('[data-set]').forEach(r=>r.querySelectorAll('button').forEach(b=>b.setAttribute('aria-pressed',save.set[r.dataset.set]===b.dataset.v)))}
 document.querySelectorAll('[data-set]').forEach(r=>r.querySelectorAll('button').forEach(b=>b.onclick=()=>{save.set[r.dataset.set]=b.dataset.v;store();renderSettings();sfx('click')}));
 $('vol').oninput=e=>{save.set.vol=+e.target.value;if(master)master.gain.value=save.set.vol;store()};
-$('rvol').oninput=e=>{save.set.rvol=+e.target.value;if(radioBus)radioBus.gain.value=save.set.rvol*.55;store()};
+$('rvol').oninput=e=>{save.set.rvol=+e.target.value;if(netEl)netEl.volume=Math.min(1,save.set.rvol);if(radioBus)radioBus.gain.value=save.set.rvol*.55;store()};
 $('reset').onclick=()=>ask('Reset everything?','Your bank, colours and choices go back to the start.',[['Keep my stuff',null],['Reset','red',()=>{save=JSON.parse(JSON.stringify(DEF));store();renderSettings()}]]);
 /* customise */
 function swatches(el,key,list=SWATCH){el.innerHTML=list.map(c=>`<button class="sw" style="background:${c}" aria-label="colour ${c}" aria-pressed="${save[key]===c}" data-c="${c}"></button>`).join('');
@@ -562,7 +574,7 @@ function renderPlay(){loadMap();const cc=save.country,C=COUNTRIES[cc];
   $('jobs').querySelectorAll('button').forEach(b=>b.onclick=()=>{jobSel=+b.dataset.i;renderPlay()});
   $('viewPick').querySelectorAll('button').forEach(b=>{b.setAttribute('aria-pressed',save.view===b.dataset.v);b.onclick=()=>{save.view=b.dataset.v;store();renderPlay()}});
 }
-$('startDrive').onclick=()=>{initAudio();startGame(save.country,jobs[jobSel])};
+$('startDrive').onclick=()=>{freshAudio();startGame(save.country,jobs[jobSel])};
 /* modal */
 function ask(title,text,btns){$('mTitle').textContent=title;$('mText').textContent=text;const box=$('mBtns');box.innerHTML='';
   btns.forEach(([label,cls,fn])=>{const b=document.createElement('button');b.className='btn '+(cls||'');b.textContent=label;b.onclick=()=>{$('modal').classList.remove('on');fn&&fn()};box.appendChild(b)});$('modal').classList.add('on');box.lastChild.focus()}
@@ -651,7 +663,7 @@ function buildTruck(spec,col,left){
     box(.01,H*.58,.025,black,s*1.245,cabY+H*.42,cabFront-cabL*.6,g);box(.02,.05,.2,chrome,s*1.25,cabY+H*.5,cabFront-cabL*.5,g);
     for(let k=0;k<2;k++)box(.32,.05,.5,alu,s*1.12,cabY-.18-k*.36,cabFront-cabL*.42,g)}
   const visor=box(2.42,.07,.5,dark,0,cabY+H*.93,cabFront+.18,g);visor.rotation.x=.28;
-  const wipers=[];for(const s of [-.95,.1]){const pv=new THREE.Group();pv.position.set(s,cabY+H*.42,cabFront+.07);g.add(pv);box(.95,.035,.035,black,.47,0,0,pv);box(.9,.05,.02,black,.47,0,.02,pv);pv.rotation.z=.05;wipers.push(pv)}
+  const wipers=[];for(const s of [-.95,.1]){const pv=new THREE.Group();pv.position.set(s,cabY+H*.875,cabFront+.07);g.add(pv);box(.95,.035,.035,black,.47,0,0,pv);box(.9,.05,.02,black,.47,0,.02,pv);pv.rotation.z=-.05;wipers.push(pv)}
   for(const s of [-1,1]){box(.02,H*.55,.02,black,s*1.245,cabY+H*.3,cabFront-cabL*.05,g);box(.02,.02,cabL*.6,black,s*1.245,cabY+.04,cabFront-cabL*.35,g)}
   const amber=new THREE.MeshStandardMaterial({color:0xffb020,emissive:0x442a00,roughness:.3});for(let i=-2;i<=2;i++)box(.12,.06,.08,amber,i*.4,cabY+H+.02,cabFront-.06,g);
   for(const s of [-1,1]){rbox(.08,.55,spec.axles===2?2.2:3.0,.03,dark,s*1.2,.72,spec.axles===2?-.9:-1.6+.4,g)}
@@ -1423,7 +1435,7 @@ function realStart(cc,job){
 }
 function disposeWorld(){if(scene.environment)scene.environment.dispose();scene.traverse(o=>{if(o.geometry)o.geometry.dispose();if(o.material){(Array.isArray(o.material)?o.material:[o.material]).forEach(m=>{if(m.map)m.map.dispose();m.dispose()})}});world=null;scene=null}
 let wxS=null;function weatherSnd(kind){if(wxS){try{wxS.src.stop()}catch(e){}wxS.g.disconnect();wxS=null}if(!ac||!kind||kind==='clear'||kind==='snow')return;const src=ac.createBufferSource();src.buffer=noiseBuf;src.loop=true;const f=filt(kind==='rain'?'lowpass':'bandpass',kind==='rain'?2200:4200,kind==='hail'?.7:0),g=gn();g.gain.value=kind==='rain'?.07:.05;src.connect(f);f.connect(g);g.connect(master);src.start();wxS={src,g}}
-function exitGame(){weatherSnd(null);document.body.classList.remove('wet','cine');cancelAnimationFrame(raf);raf=0;if(composer){composer.dispose();composer=null}engineStop();horn(false);radio.on=false;radioLabel();G=null;if(world)disposeWorld();renderer&&renderer.renderLists.dispose();document.body.classList.remove('inside','mir');show('home')}
+function exitGame(){weatherSnd(null);document.body.classList.remove('wet','cine');cancelAnimationFrame(raf);raf=0;if(composer){composer.dispose();composer=null}engineStop();horn(false);netStop();radio.net=-1;radio.on=false;radioLabel();G=null;if(world)disposeWorld();renderer&&renderer.renderLists.dispose();document.body.classList.remove('inside','mir');show('home')}
 function setLights(on){if(!G)return;G.lights=on;G.truck.headMat.emissive.setHex(on?0xfff1c0:0x222018);G.truck.lights.forEach(l=>l.intensity=on?420:0);G.truck.tail.emissive.setHex(on?0xa00000:0x300000);G.trailer.tail.emissive.setHex(on?0xa00000:0x300000);$('swLights').setAttribute('aria-pressed',on)}
 function setView(v){G.view=v;G.truck.glass.forEach(m=>m.visible=v!=='inside');document.body.classList.toggle('inside',v==='inside');document.body.classList.toggle('mir',v==='inside'&&save.set.quality==='pretty');
   (v==='inside'?$('navSlot'):$('mapScreen')).prepend($('mini'));if(v==='inside')$('navSlot').appendChild($('radioLine'));else $('mapScreen').appendChild($('radioLine'));layoutDash();$('viewBtn').textContent=v==='inside'?'Outside view':'Cab view'}
@@ -1460,9 +1472,11 @@ function toggleSig(d){setSig(G.sig===d?0:d);sfx('click')}
 function cycleWipe(){G.wipe=((G.wipe||0)+1)%3;$('swWipe').setAttribute('aria-pressed',G.wipe>0);$('wipeLab').textContent=['Wipers','Slow','Fast'][G.wipe];sfx('click');toast(['Wipers off','Wipers slow','Wipers fast'][G.wipe],1200)}
 function wipeTick(dt){const W2=G.wipe||0;if(W2||G.wph%(2*Math.PI)>.02){G.wph=(G.wph||0)+dt*(W2===2?2.3:W2===1?1.25:1.8)*Math.PI}if(!W2&&G.wph%(2*Math.PI)<.06)G.wph=0;
   const u=(1-Math.cos(G.wph||0))/2,prev=G.wu||0;G.wu=u;if(u>.92&&prev<=.92)G.wclear=performance.now();
-  for(const pv of G.truck.wipers||[])pv.rotation.z=.05+u*1.55;
-  if(G.view==='inside'){const deg=-80+u*96,L=world.left;$('wipeA').style.transform=`rotate(${L?-deg:deg}deg)`;$('wipeB').style.transform=`rotate(${L?-deg:deg}deg)`;const since=(performance.now()-(G.wclear||0))/1000;$('drops').style.opacity=W2?Math.min(.75,since*.45):.75}}
-function cycleRadio(){if(!radio.on)radioSet(true,0);else if(radio.st<STATIONS.length-1)radioSet(true,radio.st+1);else radioSet(false);$('swRadio').setAttribute('aria-pressed',radio.on);toast(radio.on?'\u{1F4FB} '+STATIONS[radio.st].name:'Radio off',1800)}
+  for(const pv of G.truck.wipers||[]){pv.rotation.z=-(.05+u*1.55);pv.visible=G.view!=='inside'}
+  if(G.view==='inside'){const deg=80-u*96,L=world.left;$('wipeA').style.transform=`rotate(${L?-deg:deg}deg)`;$('wipeB').style.transform=`rotate(${L?-deg:deg}deg)`;const since=(performance.now()-(G.wclear||0))/1000;$('drops').style.opacity=W2?Math.min(.75,since*.45):.75}}
+function cycleRadio(){const n=BBC.length,k=!radio.on?0:radio.net>=0?radio.net+1:n+radio.st+1;netStop();radio.net=-1;
+  if(k<n){radioSet(false);radio.on=true;radio.net=k;sfx('static');netPlay(k);radioLabel()}else if(k-n<STATIONS.length)radioSet(true,k-n);else radioSet(false);
+  $('swRadio').setAttribute('aria-pressed',radio.on);toast(radio.on?'\u{1F4FB} '+(radio.net>=0?BBC[radio.net].name:STATIONS[radio.st].name):'Radio off',1800)}
 $('swPark').onclick=togglePark;$('swHaz').onclick=toggleHaz;$('swIndL').onclick=()=>toggleSig(-1);$('swIndR').onclick=()=>toggleSig(1);$('swWipe').onclick=cycleWipe;$('swLights').onclick=()=>{setLights(!G.lights);sfx('click')};$('swRadio').onclick=cycleRadio;
 $('viewBtn').onclick=()=>setView(G.view==='inside'?'outside':'inside');
 function askHome(){if(G&&!G.delivered)ask('Leave this job?','Your cargo has not been delivered yet.',[['Keep driving',null],['Go home','red',exitGame]]);else exitGame()}
