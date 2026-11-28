@@ -1708,7 +1708,7 @@ function pen(x,z,h,mark){const R=1.3,pts=[[x+Math.sin(h)*G.truck.len,z+Math.cos(
   for(const [qx,qz] of pts){const gx=Math.floor(qx/20),gz=Math.floor(qz/20),seen=new Set();for(let a=-1;a<=1;a++)for(let b=-1;b<=1;b++){const l=world.colliders.get((gx+a)+','+(gz+b));if(!l)continue;for(const o of l){if(seen.has(o))continue;seen.add(o);
       if(o.rect){const dx=qx-o.x,dz=qz-o.z,c=Math.cos(o.rect.h),s=Math.sin(o.rect.h),lx=dx*c-dz*s,lz=dx*s+dz*c,ox=o.rect.w/2+R-Math.abs(lx),oz=o.rect.d/2+R-Math.abs(lz);if(ox>0&&oz>0)p+=Math.min(ox,oz)}
       else{const d=o.r+R-Math.hypot(qx-o.x,qz-o.z);if(d>0)p+=d}}}
-    for(const c of world.cars){const d=2.6-Math.hypot(c.x-qx,c.z-qz);if(d>0){p+=d;if(mark){c.stop=1.5;penCar=c}}}
+    for(const c of world.cars){if(c.ghost)continue;const d=2.6-Math.hypot(c.x-qx,c.z-qz);if(d>0){p+=d;if(mark){c.stop=1.5;penCar=c}}}
     if(world.F&&(world.F.sea||world.F.lakes.length)){const wh=world.TR.H(qx,qz);if(wh<-1.2)p+=(-1.2-wh)*3}}
   return p}
 
@@ -1729,8 +1729,8 @@ function sirenStart(kind){if(!ac)return null;const o=ac.createOscillator(),lfo=a
 function roadPos(s,lane){const R=world.R,N=R.N,i=((Math.floor(s)%N)+N)%N,j=(i+1)%N,f=s-Math.floor(s),tx=lerp(R.tx[i],R.tx[j],f),tz=lerp(R.tz[i],R.tz[j],f);return{x:lerp(R.x[i],R.x[j],f)-tz*lane,z:lerp(R.z[i],R.z[j],f)+tx*lane,tx,tz}}
 function truckDir(){const R=world.R,i=G.idx;return Math.sin(G.h)*R.tx[i]+Math.cos(G.h)*R.tz[i]>=0?1:-1}
 function offence(kind,kmh){const now=performance.now(),rv=G.rv,crash=kind.startsWith('car')||kind.startsWith('wall');
-  if(crash){if(now-(rv.crashT??-1e9)<7000)return;rv.crashT=now}else{if(now-(rv.coolT??-1e9)<30000||world.resp.some(r=>r.kind==='police'&&r.state!=='leave'))return}
-  rv.coolT=now;const [fine,why]=FINES[kind],serious=kind==='carBig'||kind==='wallBig',R=world.R,N=R.N,td=truckDir(),lat=lateral(R,G.x,G.z,G.idx),ln=Math.abs(lat)<.6?world.side*td*1.9:clamp(lat,-1.9,1.9);
+  if(world.resp.some(r=>r.state!=='leave'))return;if(crash){if(now-(rv.crashT??-1e9)<20000)return;rv.crashT=now}else if(now-(rv.coolT??-1e9)<30000)return
+  rv.coolT=now;const [fine,why]=FINES[kind],serious=kind==='carBig'||kind==='wallBig',R=world.R,N=R.N,td=truckDir(),ln=world.side*td*5.3;/* hard shoulder on the truck's kerb side; the ambulance uses the other shoulder */
   const pol=buildResponder('police');scene.add(pol.g);world.resp.push({kind:'police',...pol,s:(G.idx-td*55+N)%N,dir:td,lane:ln,v:Math.abs(G.v)+14,state:'chase',t:0,fine,why:why+(kind==='speed'?` (${Math.round(kmh)} in a ${G.spec.limit||90} km/h limit)`:''),serious,siren:sirenStart('police'),flash:0});
   if(serious){const amb=buildResponder('amb');scene.add(amb.g);world.resp.push({kind:'amb',...amb,s:(G.idx+td*110+N)%N,dir:-td,lane:-ln,v:24,state:'come',t:0,target:G.idx,siren:sirenStart('amb'),flash:0})}
   toast(serious?'\u{1F6A8} Uh oh! Sirens… the police and an ambulance are on their way.':'\u{1F6A8} Sirens! The police are coming…',3000)}
@@ -1738,7 +1738,7 @@ function respTick(dt){const R=world.R,N=R.N;for(const r of world.resp){r.t+=dt;r
     const on=Math.floor(r.flash*6)%2;r.mA.emissiveIntensity=on?3:0;r.mB.emissiveIntensity=on?0:3;
     const gap=k=>{let d=((k-r.s)*r.dir%N+N)%N;if(d>N/2)d-=N;return d*R.ds};
     if(r.kind==='police'){const d=gap(G.idx),tg=G.spec.rigid?9-(G.truck.rear||0):(G.trailer.L||13.4)+8;
-      if(r.state==='chase'){r.v=clamp(Math.abs(G.v)+(d-tg)*.9,0,34);if(d<tg+6){r.state='stop';r.t=0;r.lane=-r.lane;save.bank=Math.max(0,save.bank-r.fine);store();sfx('thud');
+      if(r.state==='chase'){r.v=clamp(Math.abs(G.v)+(d-tg)*.9,0,34);if(d<tg+6){r.state='stop';r.t=0;save.bank=Math.max(0,save.bank-r.fine);store();sfx('thud');
           toast(`\u{1F46E} Police: ${r.why}. Fine ${money(r.fine,G.C.cur)}. Bank: ${money(save.bank,G.C.cur)}.`,5000)}}
       else if(r.state==='stop'){const tb=G.spec.rigid?1.5:(G.trailer.L||13.4)*.45;r.v=clamp(Math.abs(G.v)+(d-tb)*.9,0,34);if(r.t>6){r.state='leave';r.t=0;toast('\u{1F46E} Drive safely now!',2200)}}
       else{r.v=Math.min(30,r.v+6*dt)}}
@@ -1773,7 +1773,7 @@ function update(dt){
   G.h+=v/G.truck.wb*Math.tan(G.steer)*S.turn*dt;G.x+=Math.sin(G.h)*v*dt;G.z+=Math.cos(G.h)*v*dt;
   penCar=null;const penB=pen(px,pz,ph,false),penA=pen(G.x,G.z,G.h,true);
   const crashed=penA>penB+.001;
-  if(crashed&&Math.abs(v)>.5){if(rulesOn()){const hk=Math.abs(v)*3.6;if(penCar)offence(hk>40?'carBig':'car',hk);else if(hk>20)offence(hk>55?'wallBig':'wall',hk)}G.x=px;G.z=pz;G.h=ph;v=-v*.25;G.crashes++;G.shake=.4;sfx('thud');toast(G.crashes===1?'Bump! Careful, you lose the careful driver bonus.':'Bump!',1600)}else if(crashed){G.x=px;G.z=pz;G.h=ph;v=0}
+  if(crashed&&Math.abs(v)>.5){const hk=Math.abs(v)*3.6;if(penCar&&!penCar.ghost){penCar.ghost=true;penCar.hitT=0;penCar.pull=0;penCar.stop=0}if(rulesOn()){if(penCar)offence(hk>40?'carBig':'car',hk);else if(hk>20)offence(hk>55?'wallBig':'wall',hk)}G.x=px;G.z=pz;G.h=ph;v=-v*.25;G.crashes++;G.shake=.4;sfx('thud');toast(G.crashes===1?'Bump! Careful, you lose the careful driver bonus.':'Bump!',1600)}else if(crashed){G.x=px;G.z=pz;G.h=ph;v=0}
   if(S.rigid)G.th=G.h;else if(G.attached){G.th+=v/9.3*Math.sin(G.h-G.th)*dt;let d=G.h-G.th;d=Math.atan2(Math.sin(d),Math.cos(d));if(Math.abs(d)>1.25)G.th=G.h-Math.sign(d)*1.25}
   G.v=v;G.dist+=Math.abs(v)*dt;
   if((fwd||rev)&&!G.park&&Math.abs(v)<.3){G.stuckT=(G.stuckT||0)+dt;if(G.stuckT>2.5)recover()}else G.stuckT=0;
@@ -1794,9 +1794,15 @@ function update(dt){
   const zoneNow=G.attached&&!G.delivered&&inZone();$('release').style.display=zoneNow&&Math.abs(v)<1.5?'block':'none';
   if(zoneNow&&Math.abs(v)>=1.5&&performance.now()-G.toastT>3000){G.toastT=performance.now();toast('You are in the zone. Stop the truck!')}
   /* traffic */
-  for(const c of world.cars){if(c.stop>0){c.stop-=dt;continue}let cv=c.v;
-    if(c.dir>0){const ahead=((G.idx-Math.floor(c.s)+R.N)%R.N);if(ahead>0&&ahead<18&&Math.abs(lateral(R,G.x,G.z,G.idx)-c.lane*world.side)<2.5)cv=Math.min(cv,Math.max(0,Math.abs(G.v)-1))}
-    c.s=(c.s+c.dir*cv*dt/R.ds+R.N)%R.N;const i=Math.floor(c.s),j=(i+1)%R.N,f=c.s-i,tx=lerp(R.tx[i],R.tx[j],f),tz=lerp(R.tz[i],R.tz[j],f),lane=c.lane*world.side;
+  const tLat=lateral(R,G.x,G.z,G.idx),tDir=truckDir();
+  for(const c of world.cars){if(c.stop>0){c.stop-=dt;continue}let cv=c.v;const cLane=c.lane*world.side;
+    if(c.ghost){c.hitT+=dt;/* hit car: creep onto the hard shoulder, wait with hazards, then rejoin once the truck is well clear */
+      if(c.hitT<2.5){c.pull=Math.min(1,c.pull+dt/2.5);cv=2.5}else{const away=Math.hypot(c.x-G.x,c.z-G.z),police=world.resp.some(r=>r.kind==='police'&&r.state!=='leave');
+        if(c.hitT<14||police||away<25){cv=0}else{c.pull=Math.max(0,c.pull-dt/3);if(c.pull===0&&away>40){c.ghost=false;if(c.tl)c.tl.emissiveIntensity=1}}}
+      c.tl&&(c.tl.emissiveIntensity=Math.floor(c.hitT*2.5)%2?2:.3)}
+    else{const ahead=((G.idx-Math.floor(c.s))*c.dir+R.N)%R.N;if(ahead>0&&ahead<20&&Math.abs(tLat-cLane)<2.6){const same=tDir===c.dir;cv=Math.min(cv,same?Math.max(0,Math.abs(G.v)-1):0)}
+      for(const r of world.resp){const ra=((Math.floor(r.s)-Math.floor(c.s))*c.dir+R.N)%R.N;if(ra>0&&ra<14&&Math.abs(r.lane-cLane)<2.6)cv=Math.min(cv,r.dir===c.dir?r.v:0)}}
+    c.s=(c.s+c.dir*cv*dt/R.ds+R.N)%R.N;const i=Math.floor(c.s),j=(i+1)%R.N,f=c.s-i,tx=lerp(R.tx[i],R.tx[j],f),tz=lerp(R.tz[i],R.tz[j],f),lane=cLane*(1+(c.pull||0)*(5.3/1.9-1));
     c.x=lerp(R.x[i],R.x[j],f)-tz*lane;c.z=lerp(R.z[i],R.z[j],f)+tx*lane;c.g.position.set(c.x,0,c.z);c.g.rotation.y=Math.atan2(tx,tz)+(c.dir<0?Math.PI:0);
     const night=save.set.time!=='day';c.hl.emissive.setHex(night?0xfff1c0:0x222018)}
   for(const s of world.spinners)s.rotation.z+=dt*.6;for(const f of world.anims)f(dt);unloadTick(dt);refuelTick(dt);respTick(dt);rulesTick(dt,Math.abs(v)*3.6,dRoad,offroad);
